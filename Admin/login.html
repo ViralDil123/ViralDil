@@ -1,0 +1,99 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ViralDil Admin Login</title>
+  <style>
+    *{box-sizing:border-box}
+    body{
+      margin:0;min-height:100vh;display:grid;place-items:center;
+      padding:20px;background:#090611;color:#fff;
+      font-family:Arial,sans-serif
+    }
+    .panel{
+      width:100%;max-width:390px;padding:30px;
+      background:#171025;border:1px solid #38244e;
+      border-radius:18px
+    }
+    h1{margin:0 0 8px;color:#d8a5ff}
+    p{color:#b9acc9;font-size:14px}
+    input,button{
+      width:100%;padding:14px;margin-top:14px;
+      border-radius:9px;font-size:15px
+    }
+    input{background:#0e0a17;color:white;border:1px solid #49345f}
+    button{
+      border:0;background:linear-gradient(90deg,#8b35d6,#d13e9b);
+      color:white;font-weight:bold;cursor:pointer
+    }
+    #message{margin-top:15px;line-height:1.5}
+  </style>
+</head>
+<body>
+  <main class="panel">
+    <h1>ViralDil Admin</h1>
+    <p>Secure administrator access</p>
+
+    <form id="loginForm">
+      <input id="email" type="email" placeholder="Admin email" required>
+      <input id="password" type="password" placeholder="Password" required>
+      <button id="loginButton" type="submit">Secure Login</button>
+    </form>
+    <div id="message" role="status"></div>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCX7XIJTMLMBqZjwh5stVxDOmc1Xo-d2g0",
+      authDomain: "viraldil.firebaseapp.com",
+      projectId: "viraldil",
+      storageBucket: "viraldil.firebasestorage.app",
+      messagingSenderId: "545020674224",
+      appId: "1:545020674224:web:95de7739790d3c23f4bb75",
+      measurementId: "G-2GQKHJW7EV"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+
+    const form = document.getElementById("loginForm");
+    const message = document.getElementById("message");
+    const button = document.getElementById("loginButton");
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      button.disabled = true;
+      message.textContent = "Verifying administrator account...";
+
+      try {
+        const credential = await auth.signInWithEmailAndPassword(
+          document.getElementById("email").value.trim(),
+          document.getElementById("password").value
+        );
+
+        const token = await credential.user.getIdToken(true);
+
+        const response = await fetch("/api/admin/partners", {
+          headers: { Authorization: "Bearer " + token }
+        });
+
+        if (!response.ok) {
+          await auth.signOut();
+          throw new Error("This account does not have admin access.");
+        }
+
+        sessionStorage.setItem("viraldil_admin_token", token);
+        window.location.href = "/Admin/partners.html";
+
+      } catch (error) {
+        message.textContent = error.message || "Login failed.";
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
