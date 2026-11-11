@@ -16,7 +16,9 @@ function decodeBase64Url(value) {
 }
 
 function decodeJwtPart(value) {
-  return JSON.parse(new TextDecoder().decode(decodeBase64Url(value)));
+  return JSON.parse(
+    new TextDecoder().decode(decodeBase64Url(value))
+  );
 }
 
 async function getFirebaseKeys() {
@@ -45,16 +47,10 @@ async function verifyFirebaseToken(request) {
   const authorization = request.headers.get("Authorization") || "";
   const match = authorization.match(/^Bearer\s+(.+)$/i);
 
-  if (!match) {
-    throw new Error("Authentication required");
-  }
+  if (!match) throw new Error("Authentication required");
 
-  const token = match[1];
-  const parts = token.split(".");
-
-  if (parts.length !== 3) {
-    throw new Error("Invalid authentication token");
-  }
+  const parts = match[1].split(".");
+  if (parts.length !== 3) throw new Error("Invalid token");
 
   const header = decodeJwtPart(parts[0]);
   const payload = decodeJwtPart(parts[1]);
@@ -66,9 +62,7 @@ async function verifyFirebaseToken(request) {
   const keys = await getFirebaseKeys();
   const jwk = keys.find(key => key.kid === header.kid);
 
-  if (!jwk) {
-    throw new Error("Unknown token signing key");
-  }
+  if (!jwk) throw new Error("Unknown signing key");
 
   const publicKey = await crypto.subtle.importKey(
     "jwk",
@@ -81,22 +75,14 @@ async function verifyFirebaseToken(request) {
     ["verify"]
   );
 
-  const signingInput = new TextEncoder().encode(
-    `${parts[0]}.${parts[1]}`
-  );
-
-  const signature = decodeBase64Url(parts[2]);
-
   const validSignature = await crypto.subtle.verify(
     "RSASSA-PKCS1-v1_5",
     publicKey,
-    signature,
-    signingInput
+    decodeBase64Url(parts[2]),
+    new TextEncoder().encode(`${parts[0]}.${parts[1]}`)
   );
 
-  if (!validSignature) {
-    throw new Error("Invalid token signature");
-  }
+  if (!validSignature) throw new Error("Invalid token signature");
 
   const now = Math.floor(Date.now() / 1000);
 
@@ -110,13 +96,11 @@ async function verifyFirebaseToken(request) {
     !payload.iat ||
     payload.iat > now + 60 ||
     !payload.auth_time ||
-    payload.auth_time > now + 60
+    payload.auth_time > now + 60 ||
+    !payload.email ||
+    typeof payload.email !== "string
   ) {
     throw new Error("Invalid or expired Firebase token");
-  }
-
-  if (!payload.email || typeof payload.email !== "string") {
-    throw new Error("Firebase account email is missing");
   }
 
   return {
@@ -138,6 +122,65 @@ export default {
       });
     }
 
+    // Get the signed-in partner's own application status
+    if (
+      url.pathname === "/api/partner/me" &&
+      request.method === "GET"
+    ) {
+      try {
+        if (!env.DB) {
+          return json({
+            success: false,
+            error: "Database is not configured"
+          }, 500);
+        }
+
+        let user;
+
+        try {
+          user = await verifyFirebaseToken(request);
+        } catch (error) {
+          return json({
+            success: false,
+            error: "Please sign in again"
+          }, 401);
+        }
+
+        const partner = await env.DB.prepare(
+          `SELECT id, full_name, email, status, created_at
+           FROM partner_applications
+           WHERE auth_uid = ? AND email = ?
+           LIMIT 1`
+        ).bind(user.uid, user.email).first();
+
+        if (!partner) {
+          return json({
+            success: false,
+            error: "No partner application was found for this account"
+          }, 404);
+        }
+
+        return json({
+          success: true,
+          partner: {
+            id: partner.id,
+            fullName: partner.full_name,
+            email: partner.email,
+            status: partner.status,
+            createdAt: partner.created_at
+          },
+          status: partner.status
+        });
+
+      } catch (error) {
+        return json({
+          success: false,
+          error: "Unable to verify partner account"
+        }, 500);
+      }
+    }
+
+    // Submit partner application
     if (
       url.pathname === "/api/partner/applications" &&
       request.method === "POST"
