@@ -105,15 +105,27 @@ async function verifyFirebaseToken(request) {
 
   return {
     uid: payload.sub,
-    email: payload.email.trim().toLowerCase()
+    email: payload.email.trim().toLowerCase(),
+    admin: payload.admin === true
   };
+}
+
+async function requireAdmin(request) {
+  const user = await verifyFirebaseToken(request);
+
+  if (user.admin !== true) {
+    throw new Error("Administrator access required");
+  }
+
+  return user;
 }
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const path = url.pathname;
 
-    if (url.pathname === "/api/health" && request.method === "GET") {
+    if (path === "/api/health" && request.method === "GET") {
       return json({
         success: true,
         app: env.APP_NAME || "ViralDil",
@@ -122,17 +134,117 @@ export default {
       });
     }
 
-    // Get the signed-in partner's own application status
+    // ADMIN: List partner applications
     if (
-      url.pathname === "/api/partner/me" &&
+      path === "/api/admin/partners" &&
+      request.method === "GET"
+    ) {
+      if (!env.DB) {
+        return json({ success: false, error: "Database is not configured" }, 500);
+      }
+
+      try {
+        const admin = await requireAdmin(request);
+
+        const result = await env.DB.prepare(
+          `SELECT id, full_name, email, country, social_profile,
+                  content_category, rights_confirmed, status,
+                  created_at, updated_at, reviewed_at, reviewed_by
+           FROM partner_applications
+           ORDER BY created_at DESC`
+        ).all();
+
+        return json({
+          success: true,
+          partners: result.results || [],
+          total: (result.results || []).length
+        });
+      } catch (error) {
+        return json({
+          success: false,
+          error: error.message === "Administrator access required"
+            ? "Admin access denied"
+            : "Authentication required"
+        }, error.message === "Administrator access required" ? 403 : 401);
+      }
+    }
+
+    // ADMIN: Update partner application status
+    if (
+      path.startsWith("/api/admin/partners/") &&
+      path.endsWith("/status") &&
+      request.method === "POST"
+    ) {
+      if (!env.DB) {
+        return json({ success: false, error: "Database is not configured" }, 500);
+      }
+
+      try {
+        const admin = await requireAdmin(request);
+
+        const id = decodeURIComponent(
+          path.slice("/api/admin/partners/".length, -"/status".length)
+        );
+
+        if (!id || id.length > 128 || id.includes("/")) {
+          return json({ success: false, error: "Invalid partner ID" }, 400);
+        }
+
+        const contentType = request.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          return json({ success: false, error: "Content-Type must be application/json" }, 415);
+        }
+
+        const data = await request.json();
+        const status = String(data.status || "").trim();
+
+        if (!["Approved", "Rejected", "Suspended"].includes(status)) {
+          return json({
+            success: false,
+            error: "Invalid status"
+          }, 400);
+        }
+
+        const result = await env.DB.prepare(
+          `UPDATE partner_applications
+           SET status = ?,
+               reviewed_at = CURRENT_TIMESTAMP,
+               reviewed_by = ?,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`
+        ).bind(status, admin.uid, id).run();
+
+        if (!result.meta || result.meta.changes === 0) {
+          return json({
+            success: false,
+            error: "Partner application not found"
+          }, 404);
+        }
+
+        return json({
+          success: true,
+          message: "Partner status updated",
+          id,
+          status
+        });
+      } catch (error) {
+        return json({
+          success: false,
+          error: error.message === "Administrator access required"
+            ? "Admin access denied"
+            : "Unable to update partner status"
+        }, error.message === "Administrator access required" ? 403 : 401);
+      }
+    }
+
+    // PARTNER: Get own application
+    if (
+      path === "/api/partner/me" &&
       request.method === "GET"
     ) {
       try {
         if (!env.DB) {
-          return json({
-            success: false,
-            error: "Database is not configured"
-          }, 500);
+          return json({ success: false, error: "Database is not configured" }, 500);
         }
 
         let user;
@@ -140,10 +252,7 @@ export default {
         try {
           user = await verifyFirebaseToken(request);
         } catch (error) {
-          return json({
-            success: false,
-            error: "Please sign in again"
-          }, 401);
+          return json({ success: false, error: "Please sign in again" }, 401);
         }
 
         const partner = await env.DB.prepare(
@@ -171,7 +280,6 @@ export default {
           },
           status: partner.status
         });
-
       } catch (error) {
         return json({
           success: false,
@@ -180,17 +288,14 @@ export default {
       }
     }
 
-    // Submit partner application
+    // PARTNER: Submit application
     if (
-      url.pathname === "/api/partner/applications" &&
+      path === "/api/partner/applications" &&
       request.method === "POST"
     ) {
       try {
         if (!env.DB) {
-          return json({
-            success: false,
-            error: "Database is not configured"
-          }, 500);
+          return json({ success: false, error: "Database is not configured" }, 500);
         }
 
         const contentType = request.headers.get("content-type") || "";
