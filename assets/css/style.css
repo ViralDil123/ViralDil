@@ -296,3 +296,22 @@ button, .btn {
     height: 110px;
   }
 }
+/* ViralDil Full Screen Splash */
+.viraldil-splash {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  background: #090911;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+}
+
+.viraldil-splash img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
