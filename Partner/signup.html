@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Join as Partner | ViralDil</title>
   <link rel="stylesheet" href="../assets/css/style.css">
+
   <style>
     body { min-height:100vh; padding:25px 15px; }
     .partner-form { max-width:520px; margin:30px auto; }
@@ -29,7 +30,7 @@
     <p class="eyebrow">Creator Partnership</p>
     <h1>Join as a Partner</h1>
     <p class="muted">
-      Submit your application to become a ViralDil partner.
+      Create your account and submit your partner application.
     </p>
 
     <form id="partnerSignup">
@@ -44,6 +45,13 @@
         <label for="email">Email Address</label>
         <input id="email" type="email" maxlength="254"
           placeholder="Enter your email" required>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" minlength="8"
+          autocomplete="new-password"
+          placeholder="At least 8 characters" required>
       </div>
 
       <div class="field">
@@ -86,7 +94,7 @@
       </p>
 
       <button type="submit" id="submitButton">
-        Submit Partner Application
+        Create Account & Submit Application
       </button>
 
       <p id="message" class="notice" aria-live="polite"></p>
@@ -95,7 +103,22 @@
     <a class="back muted" href="../index.html">Back to ViralDil</a>
   </div>
 
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+
   <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCX7XIJTMLMBqZjwh5stVxDOmc1Xo-d2g0",
+      authDomain: "viraldil.firebaseapp.com",
+      projectId: "viraldil",
+      storageBucket: "viraldil.firebasestorage.app",
+      messagingSenderId: "545020674224",
+      appId: "1:545020674224:web:95de7739790d3c23f4bb75"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+
     const form = document.getElementById("partnerSignup");
     const message = document.getElementById("message");
     const submitButton = document.getElementById("submitButton");
@@ -106,25 +129,49 @@
       if (!form.reportValidity()) return;
 
       submitButton.disabled = true;
-      submitButton.textContent = "Submitting...";
+      submitButton.textContent = "Creating account...";
       message.textContent = "";
 
-      const payload = {
-        fullName: document.getElementById("name").value.trim(),
-        email: document.getElementById("email").value.trim(),
-        country: document.getElementById("country").value.trim(),
-        socialProfile: document.getElementById("channel").value.trim(),
-        contentCategory: document.getElementById("content").value,
-        rightsConfirmed: document.getElementById("rights").checked
-      };
+      let accountCreated = false;
 
       try {
+        const fullName = document.getElementById("name").value.trim();
+        const email = document.getElementById("email").value.trim().toLowerCase();
+        const password = document.getElementById("password").value;
+        const country = document.getElementById("country").value.trim();
+        const socialProfile = document.getElementById("channel").value.trim();
+        const contentCategory = document.getElementById("content").value;
+        const rightsConfirmed = document.getElementById("rights").checked;
+
+        const credential = await auth.createUserWithEmailAndPassword(
+          email,
+          password
+        );
+
+        accountCreated = true;
+
+        await credential.user.updateProfile({
+          displayName: fullName
+        });
+
+        const idToken = await credential.user.getIdToken(true);
+
+        submitButton.textContent = "Submitting application...";
+
         const response = await fetch("/api/partner/applications", {
           method: "POST",
           headers: {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + idToken
           },
-          body: JSON.stringify(payload)
+          body: JSON.stringify({
+            fullName,
+            email,
+            country,
+            socialProfile,
+            contentCategory,
+            rightsConfirmed
+          })
         });
 
         const result = await response.json();
@@ -134,15 +181,29 @@
         }
 
         message.textContent =
-          "Application submitted successfully. Status: Pending Admin review.";
+          "Account created. Application submitted successfully. Status: Pending Admin review.";
+
         form.reset();
+        document.getElementById("password").value = "";
 
       } catch (error) {
-        message.textContent =
-          error.message || "Network error. Please try again.";
+        if (accountCreated) {
+          message.textContent =
+            "Your Firebase account was created, but application submission failed. Please sign in and contact support.";
+        } else {
+          const errors = {
+            "auth/email-already-in-use": "This email already has an account. Please sign in.",
+            "auth/weak-password": "Please use a stronger password.",
+            "auth/invalid-email": "Please enter a valid email address.",
+            "auth/network-request-failed": "Network error. Please try again."
+          };
+
+          message.textContent =
+            errors[error.code] || error.message || "Unable to create account.";
+        }
       } finally {
         submitButton.disabled = false;
-        submitButton.textContent = "Submit Partner Application";
+        submitButton.textContent = "Create Account & Submit Application";
       }
     });
   </script>
