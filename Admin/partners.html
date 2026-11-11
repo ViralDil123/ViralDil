@@ -1,1 +1,159 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ViralDil</title><link rel="stylesheet" href="../assets/css/style.css"></head><body><div id="app"></div><script src="../assets/js/app.js"></script></body></html>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Partner Applications | ViralDil</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <style>
+    .admin-wrap { max-width:1100px; margin:35px auto; padding:18px; }
+    .application { background:#171727; border:1px solid #302b48;
+      border-radius:15px; padding:18px; margin:14px 0; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:15px; }
+    .reject { background:#8d304b; }
+    .status { color:#c4a4ff; font-size:13px; }
+    .error { color:#ff9aaf; }
+  </style>
+</head>
+<body>
+  <main class="admin-wrap">
+    <a class="brand" href="dashboard.html">Viral<span>Dil</span></a>
+
+    <h1>Partner Applications</h1>
+    <p class="muted">Review and manage partner applications.</p>
+
+    <div class="panel">
+      <div class="head">
+        <h2>Applications</h2>
+        <button type="button" id="refresh" class="secondary">Refresh</button>
+      </div>
+      <p id="message" class="status" aria-live="polite">
+        Loading applications...
+      </p>
+      <div id="applications"></div>
+    </div>
+  </main>
+
+  <script>
+    (() => {
+      const list = document.getElementById('applications');
+      const message = document.getElementById('message');
+
+      async function loadApplications() {
+        list.replaceChildren();
+        message.textContent = 'Loading applications...';
+        message.className = 'status';
+
+        try {
+          const response = await fetch('/api/admin/partners', {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+          });
+
+          if (!response.ok) {
+            throw new Error(
+              response.status === 404
+                ? 'Partner API is not connected yet.'
+                : 'Unable to load applications. Admin access may be required.'
+            );
+          }
+
+          const data = await response.json();
+          const partners = Array.isArray(data.partners)
+            ? data.partners
+            : [];
+
+          if (!partners.length) {
+            message.textContent = 'No partner applications found.';
+            return;
+          }
+
+          message.textContent = '';
+
+          partners.forEach(partner => {
+            const card = document.createElement('section');
+            card.className = 'application';
+
+            const name = document.createElement('h3');
+            name.textContent = partner.name || 'Unnamed applicant';
+
+            const email = document.createElement('p');
+            email.textContent = 'Email: ' + (partner.email || 'Not provided');
+
+            const status = document.createElement('p');
+            status.textContent = 'Status: ' + (partner.status || 'Pending');
+            status.className = 'status';
+
+            card.append(name, email, status);
+
+            if (partner.status === 'Pending' && partner.id) {
+              const actions = document.createElement('div');
+              actions.className = 'actions';
+
+              ['Approved', 'Rejected'].forEach(newStatus => {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.textContent = newStatus === 'Approved'
+                  ? 'Approve'
+                  : 'Reject';
+
+                if (newStatus === 'Rejected') {
+                  button.className = 'reject';
+                }
+
+                button.addEventListener('click', () =>
+                  updateStatus(partner.id, newStatus, button)
+                );
+
+                actions.appendChild(button);
+              });
+
+              card.appendChild(actions);
+            }
+
+            list.appendChild(card);
+          });
+        } catch (error) {
+          message.textContent = error.message;
+          message.className = 'error';
+        }
+      }
+
+      async function updateStatus(id, status, button) {
+        if (!confirm('Change partner status to ' + status + '?')) return;
+
+        button.disabled = true;
+
+        try {
+          const response = await fetch(
+            '/api/admin/partners/' + encodeURIComponent(id) + '/status',
+            {
+              method: 'POST',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status })
+            }
+          );
+
+          if (!response.ok) {
+            throw new Error('Status update failed. Backend may not be connected.');
+          }
+
+          await loadApplications();
+        } catch (error) {
+          message.textContent = error.message;
+          message.className = 'error';
+          button.disabled = false;
+        }
+      }
+
+      document.getElementById('refresh')
+        .addEventListener('click', loadApplications);
+
+      loadApplications();
+    })();
+  </script>
+</body>
+</html>
