@@ -1,1 +1,117 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ViralDil</title><link rel="stylesheet" href="../assets/css/style.css"></head><body><div id="app"></div><script src="../assets/js/app.js"></script></body></html>
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Partner Dashboard | ViralDil</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <style>
+    body { min-height:100vh; padding:20px; }
+    .dashboard { max-width:900px; margin:30px auto; }
+    .panel {
+      background:#151326; border:1px solid #302b48;
+      border-radius:16px; padding:22px; margin-top:20px;
+    }
+    .dashboard h1 { font-size:28px; }
+    .dashboard button {
+      padding:12px 20px; border-radius:10px;
+      cursor:pointer; margin-top:15px;
+    }
+    .muted { color:#aaa; }
+    .status { color:#c4a4ff; font-weight:bold; }
+  </style>
+</head>
+<body>
+  <main class="dashboard">
+    <a class="brand" href="index.html">Viral<span>Dil</span></a>
+
+    <section class="panel">
+      <p class="eyebrow">CREATOR PARTNER</p>
+      <h1>Partner Dashboard</h1>
+      <p class="muted">Welcome to your ViralDil Partner Account.</p>
+      <p id="loading">Loading your account...</p>
+    </section>
+
+    <section class="panel" id="account" hidden>
+      <h2>Account Information</h2>
+      <p>Name: <span id="name">—</span></p>
+      <p>Email: <span id="email">—</span></p>
+      <p>Status: <span id="status" class="status">—</span></p>
+    </section>
+
+    <section class="panel">
+      <h2>Creator Services</h2>
+      <p class="muted">
+        Video uploads, publishing, analytics and earnings
+        will be available when those services are implemented.
+      </p>
+    </section>
+
+    <button id="logout">Log Out</button>
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCX7XIJTMLMBqZjwh5stVxDOmc1Xo-d2g0",
+      authDomain: "viraldil.firebaseapp.com",
+      projectId: "viraldil",
+      storageBucket: "viraldil.firebasestorage.app",
+      messagingSenderId: "545020674224",
+      appId: "1:545020674224:web:95de7739790d3c23f4bb75"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+
+    const loading = document.getElementById("loading");
+
+    auth.onAuthStateChanged(async user => {
+      if (!user) {
+        window.location.replace("login.html");
+        return;
+      }
+
+      try {
+        const token = await user.getIdToken();
+
+        const response = await fetch("/api/partner/me", {
+          headers: { Authorization: "Bearer " + token },
+          cache: "no-store"
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success ||
+            result.status !== "Approved") {
+          await auth.signOut();
+          window.location.replace("login.html");
+          return;
+        }
+
+        document.getElementById("name").textContent =
+          result.full_name || user.displayName || "Partner";
+
+        document.getElementById("email").textContent =
+          result.email || user.email || "—";
+
+        document.getElementById("status").textContent = result.status;
+
+        document.getElementById("account").hidden = false;
+        loading.textContent = "Your account is ready.";
+
+      } catch (error) {
+        loading.textContent = "Unable to load your account. Please refresh.";
+      }
+    });
+
+    document.getElementById("logout").addEventListener("click", async () => {
+      await auth.signOut();
+      window.location.replace("login.html");
+    });
+  </script>
+</body>
+</html>
