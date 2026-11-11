@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Partner Login | ViralDil</title>
   <link rel="stylesheet" href="../assets/css/style.css">
+
   <style>
     body { min-height:100vh; padding:20px 15px; }
     .login-box { max-width:450px; margin:8vh auto; }
@@ -17,8 +18,10 @@
     }
     .login-box button { width:100%; margin-top:18px; }
     .message { color:#c4a4ff; font-size:13px; }
-    .links { display:flex; justify-content:space-between;
-      gap:10px; flex-wrap:wrap; margin-top:20px; }
+    .links {
+      display:flex; justify-content:space-between;
+      gap:10px; flex-wrap:wrap; margin-top:20px;
+    }
   </style>
 </head>
 <body>
@@ -44,7 +47,7 @@
           placeholder="Enter your password" required>
       </div>
 
-      <button type="submit">Log In</button>
+      <button type="submit" id="loginButton">Log In</button>
       <p id="message" class="message" aria-live="polite"></p>
     </form>
 
@@ -54,13 +57,91 @@
     </div>
   </main>
 
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+
   <script>
-    document.getElementById('partnerLogin')
-      .addEventListener('submit', function(event) {
-        event.preventDefault();
-        document.getElementById('message').textContent =
-          'Partner login service is not connected yet.';
-      });
+    const firebaseConfig = {
+      apiKey: "AIzaSyCX7XIJTMLMBqZjwh5stVxDOmc1Xo-d2g0",
+      authDomain: "viraldil.firebaseapp.com",
+      projectId: "viraldil",
+      storageBucket: "viraldil.firebasestorage.app",
+      messagingSenderId: "545020674224",
+      appId: "1:545020674224:web:95de7739790d3c23f4bb75"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+
+    const form = document.getElementById("partnerLogin");
+    const message = document.getElementById("message");
+    const button = document.getElementById("loginButton");
+
+    form.addEventListener("submit", async function(event) {
+      event.preventDefault();
+
+      if (!form.reportValidity()) return;
+
+      button.disabled = true;
+      button.textContent = "Signing in...";
+      message.textContent = "";
+
+      try {
+        const email = document.getElementById("email").value.trim().toLowerCase();
+        const password = document.getElementById("password").value;
+
+        const credential = await auth.signInWithEmailAndPassword(
+          email,
+          password
+        );
+
+        const token = await credential.user.getIdToken(true);
+
+        // Verify that a partner application exists for this account.
+        const response = await fetch("/api/partner/me", {
+          method: "GET",
+          headers: {
+            "Authorization": "Bearer " + token
+          },
+          cache: "no-store"
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          await auth.signOut();
+          throw new Error(result.error || "Partner account could not be verified.");
+        }
+
+        if (result.status === "Pending") {
+          message.textContent = "Your application is Pending Admin review.";
+          return;
+        }
+
+        if (result.status !== "Approved") {
+          await auth.signOut();
+          throw new Error("Your partner application is not approved. Please contact support.");
+        }
+
+        window.location.href = "partner-dashboard.html";
+
+      } catch (error) {
+        const errors = {
+          "auth/invalid-credential": "Incorrect email or password.",
+          "auth/user-not-found": "No account found with this email.",
+          "auth/wrong-password": "Incorrect email or password.",
+          "auth/invalid-email": "Please enter a valid email.",
+          "auth/too-many-requests": "Too many attempts. Please try again later.",
+          "auth/network-request-failed": "Network error. Please try again."
+        };
+
+        message.textContent =
+          errors[error.code] || error.message || "Unable to sign in.";
+      } finally {
+        button.disabled = false;
+        button.textContent = "Log In";
+      }
+    });
   </script>
 
 </body>
