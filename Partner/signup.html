@@ -10,7 +10,8 @@
     body { min-height:100vh; padding:25px 15px; }
     .partner-form { max-width:520px; margin:30px auto; }
     .partner-form h1 { font-size:30px; margin-bottom:8px; }
-    .partner-form input, .partner-form select {
+    .partner-form input:not([type="checkbox"]),
+    .partner-form select {
       width:100%; padding:13px; border-radius:11px;
       background:#0c0c17; color:white;
       border:1px solid #302b48;
@@ -28,51 +29,38 @@
     <p class="eyebrow">Creator Partnership</p>
     <h1>Join as a Partner</h1>
     <p class="muted">
-      Create your partner account and share your videos with ViralDil.
+      Submit your application to become a ViralDil partner.
     </p>
 
     <form id="partnerSignup">
 
       <div class="field">
         <label for="name">Full Name</label>
-        <input id="name" name="name" type="text"
+        <input id="name" type="text" maxlength="100"
           placeholder="Enter your full name" required>
       </div>
 
       <div class="field">
         <label for="email">Email Address</label>
-        <input id="email" name="email" type="email"
+        <input id="email" type="email" maxlength="254"
           placeholder="Enter your email" required>
       </div>
 
       <div class="field">
-        <label for="password">Password</label>
-        <input id="password" name="password" type="password"
-          minlength="8" placeholder="At least 8 characters" required>
-      </div>
-
-      <div class="field">
-        <label for="confirmPassword">Confirm Password</label>
-        <input id="confirmPassword" name="confirmPassword"
-          type="password" minlength="8"
-          placeholder="Confirm your password" required>
-      </div>
-
-      <div class="field">
         <label for="country">Country</label>
-        <input id="country" name="country" type="text"
+        <input id="country" type="text" maxlength="100"
           placeholder="Your country" required>
       </div>
 
       <div class="field">
         <label for="channel">Website or Social Profile</label>
-        <input id="channel" name="channel" type="url"
+        <input id="channel" type="url" maxlength="500"
           placeholder="https://example.com">
       </div>
 
       <div class="field">
         <label for="content">Content Category</label>
-        <select id="content" name="content" required>
+        <select id="content" required>
           <option value="">Select category</option>
           <option>Entertainment</option>
           <option>Emotional Stories</option>
@@ -87,42 +75,76 @@
         <label>
           <input type="checkbox" id="rights"
             style="width:auto" required>
-          I confirm that I own or have permission to use
-          the videos I upload.
+          I confirm that I own or have permission to upload,
+          edit, store, distribute and monetize the videos I submit.
         </label>
       </div>
 
       <p class="notice">
-        Partner applications require Admin review.
-        Approval is not guaranteed.
+        Applications require Admin review. Approval is not guaranteed.
+        You must have the necessary rights for all submitted content.
       </p>
 
-      <button type="submit">Create Partner Account</button>
-      <p id="message" class="notice" aria-live="polite"></p>
+      <button type="submit" id="submitButton">
+        Submit Partner Application
+      </button>
 
+      <p id="message" class="notice" aria-live="polite"></p>
     </form>
 
     <a class="back muted" href="../index.html">Back to ViralDil</a>
   </div>
 
   <script>
-    document.getElementById('partnerSignup')
-      .addEventListener('submit', function(event) {
-        event.preventDefault();
+    const form = document.getElementById("partnerSignup");
+    const message = document.getElementById("message");
+    const submitButton = document.getElementById("submitButton");
 
-        const password = document.getElementById('password').value;
-        const confirmPassword =
-          document.getElementById('confirmPassword').value;
-        const message = document.getElementById('message');
+    form.addEventListener("submit", async function(event) {
+      event.preventDefault();
 
-        if (password !== confirmPassword) {
-          message.textContent = 'Passwords do not match.';
-          return;
+      if (!form.reportValidity()) return;
+
+      submitButton.disabled = true;
+      submitButton.textContent = "Submitting...";
+      message.textContent = "";
+
+      const payload = {
+        fullName: document.getElementById("name").value.trim(),
+        email: document.getElementById("email").value.trim(),
+        country: document.getElementById("country").value.trim(),
+        socialProfile: document.getElementById("channel").value.trim(),
+        contentCategory: document.getElementById("content").value,
+        rightsConfirmed: document.getElementById("rights").checked
+      };
+
+      try {
+        const response = await fetch("/api/partner/applications", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || "Application could not be submitted.");
         }
 
         message.textContent =
-          'Registration service is not connected yet. Please try again later.';
-      });
+          "Application submitted successfully. Status: Pending Admin review.";
+        form.reset();
+
+      } catch (error) {
+        message.textContent =
+          error.message || "Network error. Please try again.";
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Submit Partner Application";
+      }
+    });
   </script>
 
 </body>
