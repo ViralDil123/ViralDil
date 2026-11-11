@@ -1,0 +1,129 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Join as Partner | ViralDil</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <style>
+    body { min-height:100vh; padding:25px 15px; }
+    .partner-form { max-width:520px; margin:30px auto; }
+    .partner-form h1 { font-size:30px; margin-bottom:8px; }
+    .partner-form input, .partner-form select {
+      width:100%; padding:13px; border-radius:11px;
+      background:#0c0c17; color:white;
+      border:1px solid #302b48;
+    }
+    .partner-form button { width:100%; margin-top:18px; }
+    .notice { color:#c4a4ff; font-size:13px; line-height:1.5; }
+    .back { display:block; text-align:center; margin-top:18px; }
+  </style>
+</head>
+<body>
+
+  <div class="form partner-form">
+    <a class="brand" href="../index.html">Viral<span>Dil</span></a>
+
+    <p class="eyebrow">Creator Partnership</p>
+    <h1>Join as a Partner</h1>
+    <p class="muted">
+      Create your partner account and share your videos with ViralDil.
+    </p>
+
+    <form id="partnerSignup">
+
+      <div class="field">
+        <label for="name">Full Name</label>
+        <input id="name" name="name" type="text"
+          placeholder="Enter your full name" required>
+      </div>
+
+      <div class="field">
+        <label for="email">Email Address</label>
+        <input id="email" name="email" type="email"
+          placeholder="Enter your email" required>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password"
+          minlength="8" placeholder="At least 8 characters" required>
+      </div>
+
+      <div class="field">
+        <label for="confirmPassword">Confirm Password</label>
+        <input id="confirmPassword" name="confirmPassword"
+          type="password" minlength="8"
+          placeholder="Confirm your password" required>
+      </div>
+
+      <div class="field">
+        <label for="country">Country</label>
+        <input id="country" name="country" type="text"
+          placeholder="Your country" required>
+      </div>
+
+      <div class="field">
+        <label for="channel">Website or Social Profile</label>
+        <input id="channel" name="channel" type="url"
+          placeholder="https://example.com">
+      </div>
+
+      <div class="field">
+        <label for="content">Content Category</label>
+        <select id="content" name="content" required>
+          <option value="">Select category</option>
+          <option>Entertainment</option>
+          <option>Emotional Stories</option>
+          <option>Romance</option>
+          <option>Comedy</option>
+          <option>AI Generated Videos</option>
+          <option>Other</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>
+          <input type="checkbox" id="rights"
+            style="width:auto" required>
+          I confirm that I own or have permission to use
+          the videos I upload.
+        </label>
+      </div>
+
+      <p class="notice">
+        Partner applications require Admin review.
+        Approval is not guaranteed.
+      </p>
+
+      <button type="submit">Create Partner Account</button>
+      <p id="message" class="notice" aria-live="polite"></p>
+
+    </form>
+
+    <a class="back muted" href="../index.html">Back to ViralDil</a>
+  </div>
+
+  <script>
+    document.getElementById('partnerSignup')
+      .addEventListener('submit', function(event) {
+        event.preventDefault();
+
+        const password = document.getElementById('password').value;
+        const confirmPassword =
+          document.getElementById('confirmPassword').value;
+        const message = document.getElementById('message');
+
+        if (password !== confirmPassword) {
+          message.textContent = 'Passwords do not match.';
+          return;
+        }
+
+        message.textContent =
+          'Registration service is not connected yet. Please try again later.';
+      });
+  </script>
+
+</body>
+</html>
