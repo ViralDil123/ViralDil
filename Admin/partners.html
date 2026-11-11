@@ -8,12 +8,16 @@
   <link rel="stylesheet" href="../assets/css/style.css">
   <style>
     .admin-wrap { max-width:1100px; margin:35px auto; padding:18px; }
-    .application { background:#171727; border:1px solid #302b48;
-      border-radius:15px; padding:18px; margin:14px 0; }
+    .application {
+      background:#171727; border:1px solid #302b48;
+      border-radius:15px; padding:18px; margin:14px 0;
+    }
     .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:15px; }
     .reject { background:#8d304b; }
+    .suspend { background:#76552a; }
     .status { color:#c4a4ff; font-size:13px; }
     .error { color:#ff9aaf; }
+    .details { color:#c4bdd2; font-size:14px; line-height:1.7; }
   </style>
 </head>
 <body>
@@ -37,122 +41,180 @@
 
   <script>
     (() => {
-      const list = document.getElementById('applications');
-      const message = document.getElementById('message');
+      const list = document.getElementById("applications");
+      const message = document.getElementById("message");
+      const refreshButton = document.getElementById("refresh");
+
+      const loginUrl = "/Admin/login.html";
+
+      function getToken() {
+        return sessionStorage.getItem("viraldil_admin_token");
+      }
+
+      function requireToken() {
+        const token = getToken();
+
+        if (!token) {
+          window.location.replace(loginUrl);
+          return null;
+        }
+
+        return token;
+      }
+
+      async function apiRequest(url, options = {}) {
+        const token = requireToken();
+        if (!token) throw new Error("Admin login required");
+
+        const headers = new Headers(options.headers || {});
+        headers.set("Authorization", "Bearer " + token);
+        headers.set("Accept", "application/json");
+
+        const response = await fetch(url, {
+          ...options,
+          headers,
+          cache: "no-store"
+        });
+
+        if (response.status === 401 || response.status === 403) {
+          sessionStorage.removeItem("viraldil_admin_token");
+          window.location.replace(loginUrl);
+          throw new Error("Admin session expired. Please login again.");
+        }
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.error || "Request failed");
+        }
+
+        return data;
+      }
+
+      function addText(parent, tag, text, className = "") {
+        const element = document.createElement(tag);
+        element.textContent = text;
+        if (className) element.className = className;
+        parent.appendChild(element);
+        return element;
+      }
 
       async function loadApplications() {
         list.replaceChildren();
-        message.textContent = 'Loading applications...';
-        message.className = 'status';
+        message.textContent = "Loading applications...";
+        message.className = "status";
+        refreshButton.disabled = true;
 
         try {
-          const response = await fetch('/api/admin/partners', {
-            method: 'GET',
-            credentials: 'same-origin',
-            headers: { 'Accept': 'application/json' }
+          const data = await apiRequest("/api/admin/partners", {
+            method: "GET"
           });
 
-          if (!response.ok) {
-            throw new Error(
-              response.status === 404
-                ? 'Partner API is not connected yet.'
-                : 'Unable to load applications. Admin access may be required.'
-            );
-          }
-
-          const data = await response.json();
           const partners = Array.isArray(data.partners)
             ? data.partners
             : [];
 
           if (!partners.length) {
-            message.textContent = 'No partner applications found.';
+            message.textContent = "No partner applications found.";
             return;
           }
 
-          message.textContent = '';
+          message.textContent = "";
 
           partners.forEach(partner => {
-            const card = document.createElement('section');
-            card.className = 'application';
+            const card = document.createElement("section");
+            card.className = "application";
 
-            const name = document.createElement('h3');
-            name.textContent = partner.name || 'Unnamed applicant';
+            addText(card, "h3", partner.full_name || "Unnamed applicant");
+            addText(card, "p", "Email: " + (partner.email || "Not provided"), "details");
+            addText(card, "p", "Country: " + (partner.country || "Not provided"), "details");
+            addText(card, "p", "Category: " + (partner.content_category || "Not provided"), "details");
+            addText(card, "p", "Social profile: " + (partner.social_profile || "Not provided"), "details");
+            addText(card, "p", "Rights confirmed: " + (partner.rights_confirmed ? "Yes" : "No"), "details");
+            addText(card, "p", "Status: " + (partner.status || "Pending"), "status");
 
-            const email = document.createElement('p');
-            email.textContent = 'Email: ' + (partner.email || 'Not provided');
+            if (partner.created_at) {
+              addText(card, "p", "Applied: " + partner.created_at, "details");
+            }
 
-            const status = document.createElement('p');
-            status.textContent = 'Status: ' + (partner.status || 'Pending');
-            status.className = 'status';
+            if (partner.id && partner.status !== "Rejected") {
+              const actions = document.createElement("div");
+              actions.className = "actions";
 
-            card.append(name, email, status);
+              let availableStatuses = [];
 
-            if (partner.status === 'Pending' && partner.id) {
-              const actions = document.createElement('div');
-              actions.className = 'actions';
+              if (partner.status === "Pending") {
+                availableStatuses = ["Approved", "Rejected"];
+              } else if (partner.status === "Approved") {
+                availableStatuses = ["Suspended"];
+              } else if (partner.status === "Suspended") {
+                availableStatuses = ["Approved", "Rejected"];
+              }
 
-              ['Approved', 'Rejected'].forEach(newStatus => {
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.textContent = newStatus === 'Approved'
-                  ? 'Approve'
-                  : 'Reject';
+              availableStatuses.forEach(newStatus => {
+                const button = document.createElement("button");
+                button.type = "button";
 
-                if (newStatus === 'Rejected') {
-                  button.className = 'reject';
-                }
+                button.textContent = {
+                  Approved: "Approve / Reactivate",
+                  Rejected: "Reject",
+                  Suspended: "Suspend"
+                }[newStatus];
 
-                button.addEventListener('click', () =>
+                if (newStatus === "Rejected") button.className = "reject";
+                if (newStatus === "Suspended") button.className = "suspend";
+
+                button.addEventListener("click", () =>
                   updateStatus(partner.id, newStatus, button)
                 );
 
                 actions.appendChild(button);
               });
 
-              card.appendChild(actions);
+              if (actions.children.length) card.appendChild(actions);
             }
 
             list.appendChild(card);
           });
+
         } catch (error) {
           message.textContent = error.message;
-          message.className = 'error';
+          message.className = "error";
+        } finally {
+          refreshButton.disabled = false;
         }
       }
 
       async function updateStatus(id, status, button) {
-        if (!confirm('Change partner status to ' + status + '?')) return;
+        if (!confirm("Change partner status to " + status + "?")) return;
 
         button.disabled = true;
+        message.textContent = "Updating partner status...";
 
         try {
-          const response = await fetch(
-            '/api/admin/partners/' + encodeURIComponent(id) + '/status',
+          await apiRequest(
+            "/api/admin/partners/" + encodeURIComponent(id) + "/status",
             {
-              method: 'POST',
-              credentials: 'same-origin',
-              headers: { 'Content-Type': 'application/json' },
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ status })
             }
           );
 
-          if (!response.ok) {
-            throw new Error('Status update failed. Backend may not be connected.');
-          }
-
           await loadApplications();
+
         } catch (error) {
           message.textContent = error.message;
-          message.className = 'error';
+          message.className = "error";
           button.disabled = false;
         }
       }
 
-      document.getElementById('refresh')
-        .addEventListener('click', loadApplications);
+      refreshButton.addEventListener("click", loadApplications);
 
-      loadApplications();
+      if (requireToken()) {
+        loadApplications();
+      }
     })();
   </script>
 </body>
