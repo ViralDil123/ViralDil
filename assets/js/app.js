@@ -208,5 +208,10 @@
     </footer>
 
   `;
+const splash = document.createElement('div');
+splash.className = 'viraldil-splash';
+splash.innerHTML = '<img src="assets/images/viraldil-splash.png" alt="ViralDil">';
+document.body.appendChild(splash);
 
+setTimeout(() => splash.remove(), 2500);
 })();
