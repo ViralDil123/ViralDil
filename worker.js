@@ -98,7 +98,7 @@ async function verifyFirebaseToken(request) {
     !payload.auth_time ||
     payload.auth_time > now + 60 ||
     !payload.email ||
-    typeof payload.email !== "string
+    typeof payload.email !== "string"
   ) {
     throw new Error("Invalid or expired Firebase token");
   }
