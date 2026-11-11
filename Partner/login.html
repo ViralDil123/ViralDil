@@ -1,0 +1,67 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Partner Login | ViralDil</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <style>
+    body { min-height:100vh; padding:20px 15px; }
+    .login-box { max-width:450px; margin:8vh auto; }
+    .login-box h1 { font-size:30px; margin:18px 0 8px; }
+    .login-box input {
+      width:100%; padding:14px; border-radius:11px;
+      background:#0c0c17; color:white;
+      border:1px solid #302b48;
+    }
+    .login-box button { width:100%; margin-top:18px; }
+    .message { color:#c4a4ff; font-size:13px; }
+    .links { display:flex; justify-content:space-between;
+      gap:10px; flex-wrap:wrap; margin-top:20px; }
+  </style>
+</head>
+<body>
+
+  <main class="form login-box">
+    <a class="brand" href="../index.html">Viral<span>Dil</span></a>
+
+    <p class="eyebrow">Creator Partnership</p>
+    <h1>Partner Login</h1>
+    <p class="muted">Sign in to access your ViralDil Partner Dashboard.</p>
+
+    <form id="partnerLogin">
+      <div class="field">
+        <label for="email">Email Address</label>
+        <input id="email" type="email" autocomplete="username"
+          placeholder="Enter your email" required>
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password"
+          autocomplete="current-password"
+          placeholder="Enter your password" required>
+      </div>
+
+      <button type="submit">Log In</button>
+      <p id="message" class="message" aria-live="polite"></p>
+    </form>
+
+    <div class="links">
+      <a href="signup.html">Create Partner Account</a>
+      <a href="../index.html">Back to Home</a>
+    </div>
+  </main>
+
+  <script>
+    document.getElementById('partnerLogin')
+      .addEventListener('submit', function(event) {
+        event.preventDefault();
+        document.getElementById('message').textContent =
+          'Partner login service is not connected yet.';
+      });
+  </script>
+
+</body>
+</html>
