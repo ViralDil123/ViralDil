@@ -6,25 +6,52 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Partner Dashboard | ViralDil</title>
   <link rel="stylesheet" href="../assets/css/style.css">
+
   <style>
     body { min-height:100vh; padding:20px; }
+
     .dashboard { max-width:900px; margin:30px auto; }
+
     .panel {
-      background:#151326; border:1px solid #302b48;
-      border-radius:16px; padding:22px; margin-top:20px;
+      background:#151326;
+      border:1px solid #302b48;
+      border-radius:16px;
+      padding:22px;
+      margin-top:20px;
     }
+
     .dashboard h1 { font-size:28px; }
-    .dashboard button {
-      padding:12px 20px; border-radius:10px;
-      cursor:pointer; margin-top:15px;
+
+    .dashboard button, .service-link {
+      display:inline-block;
+      padding:12px 20px;
+      border-radius:10px;
+      cursor:pointer;
+      margin-top:15px;
+      text-decoration:none;
+      font-weight:bold;
     }
+
+    .service-link {
+      background:#ff477e;
+      color:#fff;
+      margin-right:10px;
+    }
+
+    .secondary-link {
+      background:#302b48;
+      color:#fff;
+    }
+
     .muted { color:#aaa; }
     .status { color:#c4a4ff; font-weight:bold; }
   </style>
 </head>
+
 <body>
   <main class="dashboard">
-    <a class="brand" href="index.html">Viral<span>Dil</span></a>
+
+    <a class="brand" href="../index.html">Viral<span>Dil</span></a>
 
     <section class="panel">
       <p class="eyebrow">CREATOR PARTNER</p>
@@ -43,12 +70,20 @@
     <section class="panel">
       <h2>Creator Services</h2>
       <p class="muted">
-        Video uploads, publishing, analytics and earnings
-        will be available when those services are implemented.
+        Manage your video submissions and check their review status.
       </p>
+
+      <a class="service-link" href="upload.html">
+        Upload Video
+      </a>
+
+      <a class="service-link secondary-link" href="my-videos.html">
+        My Videos
+      </a>
     </section>
 
     <button id="logout">Log Out</button>
+
   </main>
 
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -56,7 +91,7 @@
 
   <script>
     const firebaseConfig = {
-      apiKey: "AIzaSyCX7XIJTMLMBqZjwh5stVxDOmc1Xo-d2g0",
+      apiKey: "AIzaSyCX7XIJTMLMBqZjwh5stVxDOmc1Xo-dg2",
       authDomain: "viraldil.firebaseapp.com",
       projectId: "viraldil",
       storageBucket: "viraldil.firebasestorage.app",
@@ -64,9 +99,11 @@
       appId: "1:545020674224:web:95de7739790d3c23f4bb75"
     };
 
-    firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
 
+    const auth = firebase.auth();
     const loading = document.getElementById("loading");
 
     auth.onAuthStateChanged(async user => {
@@ -93,10 +130,10 @@
         }
 
         document.getElementById("name").textContent =
-          result.full_name || user.displayName || "Partner";
+          result.partner?.fullName || user.displayName || "Partner";
 
         document.getElementById("email").textContent =
-          result.email || user.email || "—";
+          result.partner?.email || user.email || "—";
 
         document.getElementById("status").textContent = result.status;
 
@@ -104,7 +141,8 @@
         loading.textContent = "Your account is ready.";
 
       } catch (error) {
-        loading.textContent = "Unable to load your account. Please refresh.";
+        loading.textContent =
+          "Unable to load your account. Please refresh.";
       }
     });
 
