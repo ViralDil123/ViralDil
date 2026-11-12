@@ -6,12 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Partner Dashboard | ViralDil</title>
   <link rel="stylesheet" href="../assets/css/style.css">
-
   <style>
     body { min-height:100vh; padding:20px; }
-
     .dashboard { max-width:900px; margin:30px auto; }
-
     .panel {
       background:#151326;
       border:1px solid #302b48;
@@ -19,9 +16,7 @@
       padding:22px;
       margin-top:20px;
     }
-
     .dashboard h1 { font-size:28px; }
-
     .dashboard button, .service-link {
       display:inline-block;
       padding:12px 20px;
@@ -31,26 +26,14 @@
       text-decoration:none;
       font-weight:bold;
     }
-
-    .service-link {
-      background:#ff477e;
-      color:#fff;
-      margin-right:10px;
-    }
-
-    .secondary-link {
-      background:#302b48;
-      color:#fff;
-    }
-
+    .service-link { background:#ff477e; color:#fff; margin-right:10px; }
+    .secondary-link { background:#302b48; color:#fff; }
     .muted { color:#aaa; }
     .status { color:#c4a4ff; font-weight:bold; }
   </style>
 </head>
-
 <body>
   <main class="dashboard">
-
     <a class="brand" href="../index.html">Viral<span>Dil</span></a>
 
     <section class="panel">
@@ -69,21 +52,12 @@
 
     <section class="panel">
       <h2>Creator Services</h2>
-      <p class="muted">
-        Manage your video submissions and check their review status.
-      </p>
-
-      <a class="service-link" href="upload.html">
-        Upload Video
-      </a>
-
-      <a class="service-link secondary-link" href="my-videos.html">
-        My Videos
-      </a>
+      <p class="muted">Manage your video submissions and check their review status.</p>
+      <a class="service-link" href="upload.html">Upload Video</a>
+      <a class="service-link secondary-link" href="my-videos.html">My Videos</a>
     </section>
 
     <button id="logout">Log Out</button>
-
   </main>
 
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -99,9 +73,7 @@
       appId: "1:545020674224:web:95de7739790d3c23f4bb75"
     };
 
-    if (!firebase.apps.length) {
-      firebase.initializeApp(firebaseConfig);
-    }
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
 
     const auth = firebase.auth();
     const loading = document.getElementById("loading");
@@ -113,7 +85,7 @@
       }
 
       try {
-        const token = await user.getIdToken();
+        const token = await user.getIdToken(true);
 
         const response = await fetch("/api/partner/me", {
           headers: { Authorization: "Bearer " + token },
@@ -122,27 +94,31 @@
 
         const result = await response.json();
 
-        if (!response.ok || !result.success ||
-            result.status !== "Approved") {
+        if (!response.ok || !result.success) {
+          throw new Error(result.error || "Unable to verify partner account.");
+        }
+
+        const partner = result.partner || {};
+        const partnerStatus = partner.status || result.status;
+
+        if (partnerStatus !== "Approved") {
           await auth.signOut();
           window.location.replace("login.html");
           return;
         }
 
         document.getElementById("name").textContent =
-          result.partner?.fullName || user.displayName || "Partner";
+          partner.fullName || user.displayName || "Partner";
 
         document.getElementById("email").textContent =
-          result.partner?.email || user.email || "—";
+          partner.email || user.email || "—";
 
-        document.getElementById("status").textContent = result.status;
-
+        document.getElementById("status").textContent = partnerStatus;
         document.getElementById("account").hidden = false;
         loading.textContent = "Your account is ready.";
 
       } catch (error) {
-        loading.textContent =
-          "Unable to load your account. Please refresh.";
+        loading.textContent = error.message || "Unable to load your account. Please refresh.";
       }
     });
 
