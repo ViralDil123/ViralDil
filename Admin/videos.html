@@ -1,1 +1,176 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ViralDil</title><link rel="stylesheet" href="../assets/css/style.css"></head><body><div id="app"></div><script src="../assets/js/app.js"></script></body></html>
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Video Review - ViralDil</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <style>
+    body { margin:0; padding:20px; font-family:Arial,sans-serif; }
+    .container { max-width:1000px; margin:auto; }
+    .video-card { background:#fff; border:1px solid #ddd; border-radius:10px; padding:15px; margin:14px 0; }
+    .video-card h3 { margin:0 0 8px; }
+    .muted { color:#666; font-size:14px; }
+    .status { font-weight:bold; }
+    button { padding:9px 13px; margin:8px 5px 0 0; border:0; border-radius:6px; cursor:pointer; }
+    .approve { background:#16834a; color:white; }
+    .reject { background:#c73535; color:white; }
+    .suspend { background:#555; color:white; }
+    #message { margin:12px 0; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h2>ViralDil - Video Review</h2>
+  <button id="refreshBtn">Refresh Videos</button>
+  <div id="message">Checking admin access...</div>
+  <div id="videos"></div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyCX7XIJTMLMBqZjwh5stVxDOmc1Xo-dg2",
+  authDomain: "viraldil.firebaseapp.com",
+  projectId: "viraldil",
+  storageBucket: "viraldil.firebasestorage.app",
+  messagingSenderId: "545020674224",
+  appId: "1:545020674224:web:95de7739790d3c23f4bb75",
+  measurementId: "G-2GQKHJW7EV"
+};
+
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+
+const auth = firebase.auth();
+const API = "";
+const message = document.getElementById("message");
+const videosBox = document.getElementById("videos");
+
+let currentUser = null;
+
+function escapeHTML(value) {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&":"&amp;", "<":"&lt;", ">":"&gt;",
+    '"':"&quot;", "'":"&#39;"
+  })[char]);
+}
+
+async function apiRequest(path, options = {}) {
+  const token = await currentUser.getIdToken();
+  const response = await fetch(API + path, {
+    ...options,
+    headers: {
+      "Authorization": "Bearer " + token,
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    }
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data.error || data.message || "Request failed");
+  }
+
+  return data;
+}
+
+async function loadVideos() {
+  videosBox.innerHTML = "";
+  message.textContent = "Loading videos...";
+
+  try {
+    const data = await apiRequest("/api/admin/videos");
+    const videos = data.videos || [];
+
+    if (!videos.length) {
+      message.textContent = "No submitted videos found.";
+      return;
+    }
+
+    message.textContent = videos.length + " video(s) found.";
+
+    videosBox.innerHTML = videos.map(video => `
+      <div class="video-card">
+        <h3>${escapeHTML(video.title)}</h3>
+        <p>${escapeHTML(video.description || "No description")}</p>
+        <p class="muted">
+          Category: ${escapeHTML(video.category)} |
+          Duration: ${escapeHTML(video.duration_seconds)} seconds
+        </p>
+        <p class="muted">Partner UID: ${escapeHTML(video.partner_uid)}</p>
+        <p class="muted">Submitted: ${escapeHTML(video.created_at)}</p>
+        <p>Status: <span class="status">${escapeHTML(video.status)}</span></p>
+        <button class="approve" data-id="${escapeHTML(video.id)}" data-status="Approved">Approve</button>
+        <button class="reject" data-id="${escapeHTML(video.id)}" data-status="Rejected">Reject</button>
+        <button class="suspend" data-id="${escapeHTML(video.id)}" data-status="Suspended">Suspend</button>
+      </div>
+    `).join("");
+
+  } catch (error) {
+    message.textContent = error.message;
+  }
+}
+
+videosBox.addEventListener("click", async event => {
+  const button = event.target.closest("button[data-id]");
+  if (!button) return;
+
+  const id = button.dataset.id;
+  const status = button.dataset.status;
+
+  if (!confirm("Change this video's status to " + status + "?")) return;
+
+  button.disabled = true;
+  message.textContent = "Updating video...";
+
+  try {
+    await apiRequest(
+      "/api/admin/videos/" + encodeURIComponent(id) + "/status",
+      {
+        method: "POST",
+        body: JSON.stringify({ status })
+      }
+    );
+
+    message.textContent = "Video status updated.";
+    await loadVideos();
+
+  } catch (error) {
+    message.textContent = error.message;
+    button.disabled = false;
+  }
+});
+
+document.getElementById("refreshBtn").addEventListener("click", loadVideos);
+
+auth.onAuthStateChanged(async user => {
+  if (!user) {
+    location.href = "login.html";
+    return;
+  }
+
+  currentUser = user;
+
+  try {
+    const tokenInfo = await user.getIdTokenResult(true);
+
+    if (tokenInfo.claims.admin !== true) {
+      message.textContent = "Admin access required.";
+      await auth.signOut();
+      location.href = "login.html";
+      return;
+    }
+
+    await loadVideos();
+
+  } catch (error) {
+    message.textContent = error.message;
+  }
+});
+</script>
+</body>
+</html>
