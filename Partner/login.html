@@ -6,7 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Partner Login | ViralDil</title>
   <link rel="stylesheet" href="../assets/css/style.css">
-
   <style>
     body { min-height:100vh; padding:20px 15px; }
     .login-box { max-width:450px; margin:8vh auto; }
@@ -25,10 +24,8 @@
   </style>
 </head>
 <body>
-
   <main class="form login-box">
     <a class="brand" href="../index.html">Viral<span>Dil</span></a>
-
     <p class="eyebrow">Creator Partnership</p>
     <h1>Partner Login</h1>
     <p class="muted">Sign in to access your ViralDil Partner Dashboard.</p>
@@ -39,14 +36,12 @@
         <input id="email" type="email" autocomplete="username"
           placeholder="Enter your email" required>
       </div>
-
       <div class="field">
         <label for="password">Password</label>
         <input id="password" type="password"
           autocomplete="current-password"
           placeholder="Enter your password" required>
       </div>
-
       <button type="submit" id="loginButton">Log In</button>
       <p id="message" class="message" aria-live="polite"></p>
     </form>
@@ -70,16 +65,17 @@
       appId: "1:545020674224:web:95de7739790d3c23f4bb75"
     };
 
-    firebase.initializeApp(firebaseConfig);
-    const auth = firebase.auth();
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
 
+    const auth = firebase.auth();
     const form = document.getElementById("partnerLogin");
     const message = document.getElementById("message");
     const button = document.getElementById("loginButton");
 
     form.addEventListener("submit", async function(event) {
       event.preventDefault();
-
       if (!form.reportValidity()) return;
 
       button.disabled = true;
@@ -90,40 +86,35 @@
         const email = document.getElementById("email").value.trim().toLowerCase();
         const password = document.getElementById("password").value;
 
-        const credential = await auth.signInWithEmailAndPassword(
-          email,
-          password
-        );
-
+        const credential = await auth.signInWithEmailAndPassword(email, password);
         const token = await credential.user.getIdToken(true);
 
-        // Verify that a partner application exists for this account.
         const response = await fetch("/api/partner/me", {
           method: "GET",
-          headers: {
-            "Authorization": "Bearer " + token
-          },
+          headers: { "Authorization": "Bearer " + token },
           cache: "no-store"
         });
 
         const result = await response.json();
 
         if (!response.ok || !result.success) {
-          await auth.signOut();
           throw new Error(result.error || "Partner account could not be verified.");
         }
 
-        if (result.status === "Pending") {
-          message.textContent = "Your application is Pending Admin review.";
-          return;
+        // Worker returns partner details inside result.partner.
+        const partnerStatus = result.partner?.status || result.status;
+
+        if (partnerStatus === "Pending") {
+          await auth.signOut();
+          throw new Error("Your application is Pending Admin review.");
         }
 
-        if (result.status !== "Approved") {
+        if (partnerStatus !== "Approved") {
           await auth.signOut();
           throw new Error("Your partner application is not approved. Please contact support.");
         }
 
-        window.location.href = "dashboard.html";
+        window.location.replace("dashboard.html");
 
       } catch (error) {
         const errors = {
@@ -135,14 +126,12 @@
           "auth/network-request-failed": "Network error. Please try again."
         };
 
-        message.textContent =
-          errors[error.code] || error.message || "Unable to sign in.";
+        message.textContent = errors[error.code] || error.message || "Unable to sign in.";
       } finally {
         button.disabled = false;
         button.textContent = "Log In";
       }
     });
   </script>
-
 </body>
 </html>
