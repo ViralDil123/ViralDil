@@ -1,1 +1,251 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ViralDil</title><link rel="stylesheet" href="../assets/css/style.css"></head><body><div id="app"></div><script src="../assets/js/app.js"></script></body></html>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Videos - ViralDil</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: #101018;
+      color: #fff;
+      font-family: Arial, sans-serif;
+    }
+
+    .container {
+      max-width: 700px;
+      margin: 25px auto;
+      padding: 16px;
+    }
+
+    .card {
+      background: #191925;
+      border: 1px solid #303044;
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+
+    h2 { color: #ff477e; }
+
+    button {
+      width: 100%;
+      padding: 13px;
+      border: 0;
+      border-radius: 8px;
+      background: #ff477e;
+      color: #fff;
+      font-size: 15px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled { opacity: .5; }
+
+    .video {
+      padding: 16px 0;
+      border-bottom: 1px solid #303044;
+    }
+
+    .video:last-child { border-bottom: 0; }
+
+    .video-title {
+      font-size: 17px;
+      font-weight: bold;
+      overflow-wrap: anywhere;
+    }
+
+    .details {
+      color: #bbb;
+      font-size: 13px;
+      line-height: 1.6;
+      margin-top: 8px;
+    }
+
+    .status {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 6px 10px;
+      border-radius: 20px;
+      background: #303044;
+      font-size: 12px;
+    }
+
+    .pending { color: #ffbd59; }
+    .approved { color: #54dc91; }
+    .rejected { color: #ff7777; }
+    .suspended { color: #ff9c59; }
+
+    #message {
+      margin-top: 15px;
+      color: #ffbd59;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-top: 15px;
+      color: #ff77a0;
+    }
+  </style>
+</head>
+
+<body>
+  <main class="container">
+
+    <div class="card">
+      <h2>My Videos</h2>
+      <p>View your submitted video details and review status.</p>
+
+      <button type="button" id="refreshBtn">
+        Refresh Videos
+      </button>
+
+      <div id="message" role="status">
+        Checking your account...
+      </div>
+    </div>
+
+    <div class="card">
+      <div id="videoList">
+        Loading videos...
+      </div>
+    </div>
+
+    <a class="back-link" href="dashboard.html">
+      ← Back to Partner Dashboard
+    </a>
+
+  </main>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCX7XIJTMLMBqZjwh5stVxDOmc1Xo-dg2",
+      authDomain: "viraldil.firebaseapp.com",
+      projectId: "viraldil",
+      storageBucket: "viraldil.firebasestorage.app",
+      messagingSenderId: "545020674224",
+      appId: "1:545020674224:web:95de7739790d3c23f4bb75",
+      measurementId: "G-2GQKHJW7EV"
+    };
+
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+
+    const auth = firebase.auth();
+    const videoList = document.getElementById("videoList");
+    const message = document.getElementById("message");
+    const refreshBtn = document.getElementById("refreshBtn");
+
+    let currentUser = null;
+
+    function showMessage(text) {
+      message.textContent = text;
+    }
+
+    function getStatusClass(status) {
+      const classes = {
+        Pending: "pending",
+        Approved: "approved",
+        Rejected: "rejected",
+        Suspended: "suspended"
+      };
+
+      return classes[status] || "";
+    }
+
+    async function loadVideos() {
+      if (!currentUser) return;
+
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = "Loading...";
+      videoList.textContent = "Loading your videos...";
+      showMessage("");
+
+      try {
+        const token = await currentUser.getIdToken();
+
+        const response = await fetch("/api/partner/videos", {
+          method: "GET",
+          headers: {
+            Authorization: "Bearer " + token
+          }
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || "Unable to load videos.");
+        }
+
+        videoList.replaceChildren();
+
+        if (!Array.isArray(data.videos) || data.videos.length === 0) {
+          videoList.textContent = "You have not submitted any video details yet.";
+          return;
+        }
+
+        data.videos.forEach(video => {
+          const item = document.createElement("div");
+          item.className = "video";
+
+          const title = document.createElement("div");
+          title.className = "video-title";
+          title.textContent = video.title || "Untitled Video";
+
+          const details = document.createElement("div");
+          details.className = "details";
+          details.textContent =
+            "Category: " + (video.category || "N/A") +
+            " | Duration: " + (video.duration_seconds || 0) + " seconds";
+
+          const status = document.createElement("div");
+          status.className =
+            "status " + getStatusClass(video.status);
+          status.textContent = "Status: " + (video.status || "Unknown");
+
+          const date = document.createElement("div");
+          date.className = "details";
+          date.textContent =
+            "Submitted: " + (video.created_at || "Not available");
+
+          item.append(title, details, status, date);
+          videoList.appendChild(item);
+        });
+
+        showMessage("Your video list is up to date.");
+
+      } catch (error) {
+        videoList.textContent = error.message;
+        showMessage("Unable to load your videos.");
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = "Refresh Videos";
+      }
+    }
+
+    refreshBtn.addEventListener("click", loadVideos);
+
+    auth.onAuthStateChanged(user => {
+      currentUser = user;
+
+      if (!user) {
+        window.location.href = "login.html";
+        return;
+      }
+
+      loadVideos();
+    });
+  </script>
+</body>
+</html>
