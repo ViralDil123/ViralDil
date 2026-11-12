@@ -453,6 +453,228 @@ export default {
       }
     }
 
+    
+    // PARTNER: Submit video details (metadata only; no file upload yet)
+    if (
+      path === "/api/partner/videos" &&
+      request.method === "POST"
+    ) {
+      if (!env.DB) {
+        return json({ success: false, error: "Database is not configured" }, 500);
+      }
+
+      try {
+        const user = await verifyFirebaseToken(request);
+
+        const partner = await env.DB.prepare(
+          `SELECT id FROM partner_applications
+           WHERE auth_uid = ? AND email = ? AND status = 'Approved'
+           LIMIT 1`
+        ).bind(user.uid, user.email).first();
+
+        if (!partner) {
+          return json({ success: false, error: "Approved partner account required" }, 403);
+        }
+
+        const contentType = request.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          return json({ success: false, error: "Content-Type must be application/json" }, 415);
+        }
+
+        const length = Number(request.headers.get("content-length") || 0);
+        if (length > 16000) {
+          return json({ success: false, error: "Request is too large" }, 413);
+        }
+
+        const data = await request.json();
+        const title = String(data.title || "").trim();
+        const description = String(data.description || "").trim();
+        const category = String(data.category || "").trim();
+        const duration = Number(data.durationSeconds);
+        const rightsConfirmed = data.rightsConfirmed === true;
+
+        const allowedCategories = [
+          "Emotional", "Romance", "Funny",
+          "AI Stories", "Trending", "Entertainment"
+        ];
+
+        if (
+          title.length < 2 || title.length > 150 ||
+          description.length > 2000 ||
+          !allowedCategories.includes(category) ||
+          !Number.isInteger(duration) || duration < 1 || duration > 600
+        ) {
+          return json({ success: false, error: "Please check the video details" }, 400);
+        }
+
+        if (!rightsConfirmed) {
+          return json({ success: false, error: "Video rights confirmation is required" }, 400);
+        }
+
+        const result = await env.DB.prepare(
+          `INSERT INTO videos
+           (partner_uid, title, description, category,
+            duration_seconds, rights_confirmed, status)
+           VALUES (?, ?, ?, ?, ?, 1, 'Pending')`
+        ).bind(
+          user.uid, title, description, category, duration
+        ).run();
+
+        return json({
+          success: true,
+          message: "Video details submitted for Admin review",
+          status: "Pending",
+          id: result.meta?.last_row_id || null
+        }, 201);
+
+      } catch (error) {
+        return json({
+          success: false,
+          error: error.message === "Authentication required" ||
+                 error.message === "Invalid token" ||
+                 error.message === "Invalid token signature" ||
+                 error.message === "Invalid or expired Firebase token"
+            ? "Please sign in again"
+            : "Unable to submit video details"
+        }, 401);
+      }
+    }
+
+    // PARTNER: List own videos
+    if (
+      path === "/api/partner/videos" &&
+      request.method === "GET"
+    ) {
+      try {
+        const user = await verifyFirebaseToken(request);
+
+        const partner = await env.DB.prepare(
+          `SELECT id FROM partner_applications
+           WHERE auth_uid = ? AND email = ? AND status = 'Approved'
+           LIMIT 1`
+        ).bind(user.uid, user.email).first();
+
+        if (!partner) {
+          return json({ success: false, error: "Approved partner account required" }, 403);
+        }
+
+        const result = await env.DB.prepare(
+          `SELECT id, title, description, category, duration_seconds,
+                  status, created_at, updated_at, reviewed_at
+           FROM videos
+           WHERE partner_uid = ?
+           ORDER BY created_at DESC`
+        ).bind(user.uid).all();
+
+        return json({
+          success: true,
+          videos: result.results || []
+        });
+
+      } catch (error) {
+        return json({ success: false, error: "Unable to load videos" }, 401);
+      }
+    }
+
+    // ADMIN: List submitted videos
+    if (
+      path === "/api/admin/videos" &&
+      request.method === "GET"
+    ) {
+      try {
+        await requireAdmin(request);
+
+        const result = await env.DB.prepare(
+          `SELECT id, partner_uid, title, description, category,
+                  duration_seconds, rights_confirmed, status,
+                  created_at, updated_at, reviewed_at, reviewed_by
+           FROM videos
+           ORDER BY created_at DESC`
+        ).all();
+
+        return json({
+          success: true,
+          videos: result.results || []
+        });
+
+      } catch (error) {
+        return json({
+          success: false,
+          error: error.message === "Administrator access required"
+            ? "Admin access denied"
+            : "Authentication required"
+        }, error.message === "Administrator access required" ? 403 : 401);
+      }
+    }
+
+    // ADMIN: Review submitted video
+    if (
+      path.startsWith("/api/admin/videos/") &&
+      path.endsWith("/status") &&
+      request.method === "POST"
+    ) {
+      try {
+        const admin = await requireAdmin(request);
+
+        const id = decodeURIComponent(
+          path.slice("/api/admin/videos/".length, -"/status".length)
+        );
+
+        if (!id || id.length > 128 || id.includes("/")) {
+          return json({ success: false, error: "Invalid video ID" }, 400);
+        }
+
+        const contentType = request.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          return json({ success: false, error: "Content-Type must be application/json" }, 415);
+        }
+
+        const data = await request.json();
+        const status = String(data.status || "").trim();
+
+        if (!["Approved", "Rejected", "Suspended"].includes(status)) {
+          return json({ success: false, error: "Invalid status" }, 400);
+        }
+
+        const result = await env.DB.prepare(
+          `UPDATE videos
+           SET status = ?,
+               reviewed_at = CURRENT_TIMESTAMP,
+               reviewed_by = ?,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`
+        ).bind(status, admin.uid, id).run();
+
+        if (!result.meta || result.meta.changes === 0) {
+          return json({ success: false, error: "Video not found" }, 404);
+        }
+
+        return json({
+          success: true,
+          message: "Video status updated",
+          id,
+          status
+        });
+
+            } catch (error) {
+        const authErrors = [
+          "Authentication required",
+          "Invalid token",
+          "Invalid token algorithm",
+          "Invalid token signature",
+          "Invalid or expired Firebase token",
+          "Unknown signing key"
+        ];
+
+        return json({
+          success: false,
+          error: authErrors.includes(error.message)
+            ? "Please sign in again"
+            : "Unable to submit video details"
+        }, authErrors.includes(error.message) ? 401 : 500);
+      }
+    }
+
     return env.ASSETS.fetch(request);
   }
 };
