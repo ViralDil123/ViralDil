@@ -451,9 +451,7 @@ export default {
           error: "Unable to submit application"
         }, 500);
       }
-    }
-
-    
+      }
     // PARTNER: Submit video details (metadata only; no file upload yet)
     if (
       path === "/api/partner/videos" &&
@@ -511,40 +509,57 @@ export default {
           return json({ success: false, error: "Video rights confirmation is required" }, 400);
         }
 
-        const result = await env.DB.prepare(
+        const videoId = crypto.randomUUID();
+
+        await env.DB.prepare(
           `INSERT INTO videos
-           (partner_uid, title, description, category,
+           (id, partner_uid, title, description, category,
             duration_seconds, rights_confirmed, status)
-           VALUES (?, ?, ?, ?, ?, 1, 'Pending')`
+           VALUES (?, ?, ?, ?, ?, ?, 1, 'Pending')`
         ).bind(
-          user.uid, title, description, category, duration
+          videoId, user.uid, title, description, category, duration
         ).run();
 
         return json({
           success: true,
           message: "Video details submitted for Admin review",
           status: "Pending",
-          id: result.meta?.last_row_id || null
+          id: videoId
         }, 201);
 
       } catch (error) {
+        const authErrors = [
+          "Authentication required",
+          "Invalid token",
+          "Invalid token algorithm",
+          "Invalid token signature",
+          "Invalid or expired Firebase token",
+          "Unknown signing key"
+        ];
+
+        const isAuthError = authErrors.includes(error.message);
+
         return json({
           success: false,
-          error: error.message === "Authentication required" ||
-                 error.message === "Invalid token" ||
-                 error.message === "Invalid token signature" ||
-                 error.message === "Invalid or expired Firebase token"
+          error: isAuthError
             ? "Please sign in again"
             : "Unable to submit video details"
-        }, 401);
+        }, isAuthError ? 401 : 500);
       }
     }
-
+      
     // PARTNER: List own videos
     if (
       path === "/api/partner/videos" &&
       request.method === "GET"
     ) {
+      if (!env.DB) {
+        return json({
+          success: false,
+          error: "Database is not configured"
+        }, 500);
+      }
+
       try {
         const user = await verifyFirebaseToken(request);
 
@@ -555,7 +570,10 @@ export default {
         ).bind(user.uid, user.email).first();
 
         if (!partner) {
-          return json({ success: false, error: "Approved partner account required" }, 403);
+          return json({
+            success: false,
+            error: "Approved partner account required"
+          }, 403);
         }
 
         const result = await env.DB.prepare(
@@ -572,9 +590,27 @@ export default {
         });
 
       } catch (error) {
-        return json({ success: false, error: "Unable to load videos" }, 401);
+        const authErrors = [
+          "Authentication required",
+          "Invalid token",
+          "Invalid token algorithm",
+          "Invalid token signature",
+          "Invalid or expired Firebase token",
+          "Unknown signing key"
+        ];
+
+        const isAuthError = authErrors.includes(error.message);
+
+        return json({
+          success: false,
+          error: isAuthError
+            ? "Please sign in again"
+            : "Unable to load videos"
+        }, isAuthError ? 401 : 500);
       }
     }
+
+    
 
     // ADMIN: List submitted videos
     if (
@@ -613,6 +649,13 @@ export default {
       path.endsWith("/status") &&
       request.method === "POST"
     ) {
+      if (!env.DB) {
+        return json({
+          success: false,
+          error: "Database is not configured"
+        }, 500);
+      }
+
       try {
         const admin = await requireAdmin(request);
 
@@ -621,19 +664,28 @@ export default {
         );
 
         if (!id || id.length > 128 || id.includes("/")) {
-          return json({ success: false, error: "Invalid video ID" }, 400);
+          return json({
+            success: false,
+            error: "Invalid video ID"
+          }, 400);
         }
 
         const contentType = request.headers.get("content-type") || "";
         if (!contentType.includes("application/json")) {
-          return json({ success: false, error: "Content-Type must be application/json" }, 415);
+          return json({
+            success: false,
+            error: "Content-Type must be application/json"
+          }, 415);
         }
 
         const data = await request.json();
         const status = String(data.status || "").trim();
 
         if (!["Approved", "Rejected", "Suspended"].includes(status)) {
-          return json({ success: false, error: "Invalid status" }, 400);
+          return json({
+            success: false,
+            error: "Invalid status"
+          }, 400);
         }
 
         const result = await env.DB.prepare(
@@ -646,7 +698,10 @@ export default {
         ).bind(status, admin.uid, id).run();
 
         if (!result.meta || result.meta.changes === 0) {
-          return json({ success: false, error: "Video not found" }, 404);
+          return json({
+            success: false,
+            error: "Video not found"
+          }, 404);
         }
 
         return json({
@@ -656,25 +711,17 @@ export default {
           status
         });
 
-            } catch (error) {
-        const authErrors = [
-          "Authentication required",
-          "Invalid token",
-          "Invalid token algorithm",
-          "Invalid token signature",
-          "Invalid or expired Firebase token",
-          "Unknown signing key"
-        ];
-
+      } catch (error) {
         return json({
           success: false,
-          error: authErrors.includes(error.message)
-            ? "Please sign in again"
-            : "Unable to submit video details"
-        }, authErrors.includes(error.message) ? 401 : 500);
+          error: error.message === "Administrator access required"
+            ? "Admin access denied"
+            : "Unable to update video status"
+        }, error.message === "Administrator access required" ? 403 : 401);
       }
     }
 
     return env.ASSETS.fetch(request);
   }
 };
+
