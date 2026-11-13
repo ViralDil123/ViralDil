@@ -617,15 +617,352 @@ export default {
           !/^[0-9a-f-]{36}$/i.test(videoId) ||
           publicId !== `partners/${user.uid}/${videoId}` ||
           !Number.isInteger(version) || version <= 0 ||
+    // PARTNER: Submit application
+    if (
+      path === "/api/partner/applications" &&
+      request.method === "POST"
+    ) {
+      try {
+        if (!env.DB) {
+          return json({ success: false, error: "Database is not configured" }, 500);
+        }
+
+        const contentType = request.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          return json({
+            success: false,
+            error: "Content-Type must be application/json"
+          }, 415);
+        }
+
+        const length = Number(request.headers.get("content-length") || 0);
+        if (length > 16000) {
+          return json({ success: false, error: "Request is too large" }, 413);
+        }
+
+        let user;
+
+        try {
+          user = await verifyFirebaseToken(request);
+        } catch (error) {
+          return json({
+            success: false,
+            error: "Please sign in with your Firebase account again"
+          }, 401);
+        }
+
+        const data = await request.json();
+
+        const fullName = String(data.fullName || "").trim();
+        const email = String(data.email || "").trim().toLowerCase();
+        const country = String(data.country || "").trim();
+        const socialProfile = String(data.socialProfile || "").trim();
+        const contentCategory = String(data.contentCategory || "").trim();
+        const rightsConfirmed = data.rightsConfirmed === true;
+
+        if (email !== user.email) {
+          return json({
+            success: false,
+            error: "Application email must match your signed-in account"
+          }, 403);
+        }
+
+        if (
+          fullName.length < 2 ||
+          fullName.length > 100 ||
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+          email.length > 254
+        ) {
+          return json({
+            success: false,
+            error: "Please provide a valid name and email"
+          }, 400);
+        }
+
+        if (
+          country.length < 2 ||
+          country.length > 100 ||
+          socialProfile.length > 500 ||
+          contentCategory.length < 2 ||
+          contentCategory.length > 100
+        ) {
+          return json({
+            success: false,
+            error: "Please check the application fields"
+          }, 400);
+        }
+
+        if (!rightsConfirmed) {
+          return json({
+            success: false,
+            error: "Rights confirmation is required"
+          }, 400);
+        }
+
+        const existing = await env.DB.prepare(
+          `SELECT id, auth_uid, status
+           FROM partner_applications
+           WHERE email = ?
+           LIMIT 1`
+        ).bind(email).first();
+
+        if (existing) {
+          if (existing.auth_uid && existing.auth_uid !== user.uid) {
+            return json({
+              success: false,
+              error: "An application already exists for this email"
+            }, 409);
+          }
+
+          if (!existing.auth_uid) {
+            await env.DB.prepare(
+              `UPDATE partner_applications
+               SET auth_uid = ?,
+                   full_name = ?,
+                   country = ?,
+                   social_profile = ?,
+                   content_category = ?,
+                   rights_confirmed = 1,
+                   updated_at = CURRENT_TIMESTAMP
+               WHERE id = ? AND auth_uid IS NULL`
+            ).bind(
+              user.uid,
+              fullName,
+              country,
+              socialProfile,
+              contentCategory,
+              existing.id
+            ).run();
+          }
+
+          return json({
+            success: true,
+            message: "Your application already exists",
+            status: existing.status,
+            id: existing.id
+          });
+        }
+
+        await env.DB.prepare(
+          `INSERT INTO partner_applications
+           (auth_uid, full_name, email, country, social_profile,
+            content_category, rights_confirmed)
+           VALUES (?, ?, ?, ?, ?, ?, 1)`
+        ).bind(
+          user.uid,
+          fullName,
+          email,
+          country,
+          socialProfile,
+          contentCategory
+        ).run();
+
+        const application = await env.DB.prepare(
+          `SELECT id, status
+           FROM partner_applications
+           WHERE auth_uid = ?
+           LIMIT 1`
+        ).bind(user.uid).first();
+
+        return json({
+          success: true,
+          message: "Application submitted successfully",
+          status: application?.status || "Pending",
+          id: application?.id || null
+        }, 201);
+
+      } catch (error) {
+        return json({
+          success: false,
+          error: "Unable to submit application"
+        }, 500);
+      }
+    }
+
+
+    // PARTNER: Generate secure Cloudinary upload signature
+    if (
+      path === "/api/partner/videos/signature" &&
+      request.method === "POST"
+    ) {
+      try {
+        if (!env.DB) {
+          return json({ success: false, error: "Database is not configured" }, 500);
+        }
+
+        const user = await verifyFirebaseToken(request);
+
+        const partner = await env.DB.prepare(
+          `SELECT id FROM partner_applications
+           WHERE auth_uid = ? AND email = ? AND status = 'Approved'
+           LIMIT 1`
+        ).bind(user.uid, user.email).first();
+
+        if (!partner) {
+          return json({
+            success: false,
+            error: "Approved partner account required"
+          }, 403);
+        }
+
+        if (
+          !env.CLOUDINARY_API_SECRET ||
+          !env.CLOUDINARY_API_KEY ||
+          !env.CLOUDINARY_CLOUD_NAME
+        ) {
+          return json({
+            success: false,
+            error: "Cloudinary is not configured"
+          }, 500);
+        }
+
+        const videoId = crypto.randomUUID();
+        const timestamp = Math.floor(Date.now() / 1000);
+        const publicId = `partners/${user.uid}/${videoId}`;
+
+        const params = {
+          timestamp: String(timestamp),
+          upload_preset: CLOUDINARY_PRESET,
+          public_id: publicId
+        };
+
+        const signature = await cloudinarySign(
+          params,
+          env.CLOUDINARY_API_SECRET
+        );
+
+        return json({
+          success: true,
+          videoId,
+          cloudName: env.CLOUDINARY_CLOUD_NAME,
+          apiKey: env.CLOUDINARY_API_KEY,
+          timestamp,
+          uploadPreset: CLOUDINARY_PRESET,
+          publicId,
+          signature
+        });
+
+      } catch (error) {
+        const authErrors = [
+          "Authentication required",
+          "Invalid token",
+          "Invalid token algorithm",
+          "Invalid token signature",
+          "Invalid or expired Firebase token",
+          "Unknown signing key"
+        ];
+
+        const isAuth = authErrors.includes(error.message);
+
+        return json({
+          success: false,
+          error: isAuth
+            ? "Please sign in again"
+            : "Unable to prepare secure upload"
+        }, isAuth ? 401 : 500);
+      }
+    }
+
+
+    // PARTNER: Verify Cloudinary upload and save video metadata
+    if (
+      path === "/api/partner/videos" &&
+      request.method === "POST"
+    ) {
+      try {
+        if (!env.DB) {
+          return json({ success: false, error: "Database is not configured" }, 500);
+        }
+
+        const user = await verifyFirebaseToken(request);
+
+        const partner = await env.DB.prepare(
+          `SELECT id FROM partner_applications
+           WHERE auth_uid = ? AND email = ? AND status = 'Approved'
+           LIMIT 1`
+        ).bind(user.uid, user.email).first();
+
+        if (!partner) {
+          return json({
+            success: false,
+            error: "Approved partner account required"
+          }, 403);
+        }
+
+        if (!env.CLOUDINARY_API_SECRET || !env.CLOUDINARY_CLOUD_NAME) {
+          return json({
+            success: false,
+            error: "Cloudinary is not configured"
+          }, 500);
+        }
+
+        const contentType = request.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          return json({
+            success: false,
+            error: "Content-Type must be application/json"
+          }, 415);
+        }
+
+        const data = await request.json();
+
+        const title = String(data.title || "").trim();
+        const description = String(data.description || "").trim();
+        const category = String(data.category || "").trim();
+        const rightsConfirmed = data.rightsConfirmed === true;
+        const upload = data.upload || {};
+
+        const allowedCategories = [
+          "Emotional",
+          "Romance",
+          "Funny",
+          "AI Stories",
+          "Trending",
+          "Entertainment"
+        ];
+
+        if (
+          title.length < 2 ||
+          title.length > 150 ||
+          description.length > 2000 ||
+          !allowedCategories.includes(category) ||
+          !rightsConfirmed
+        ) {
+          return json({
+            success: false,
+            error: "Please check the video details and rights confirmation"
+          }, 400);
+        }
+
+        const videoId = String(data.videoId || "");
+        const publicId = String(upload.public_id || "");
+        const version = Number(upload.version);
+        const responseSignature = String(upload.signature || "");
+        const secureUrl = String(upload.secure_url || "");
+        const bytes = Number(upload.bytes);
+        const duration = Number(upload.duration);
+        const format = String(upload.format || "").toLowerCase();
+
+        if (
+          !/^[0-9a-f-]{36}$/i.test(videoId) ||
+          publicId !== `partners/${user.uid}/${videoId}` ||
+          !Number.isInteger(version) ||
+          version <= 0 ||
           !/^[a-f0-9]{40}$/i.test(responseSignature) ||
-          !Number.isInteger(bytes) || bytes <= 0 ||
+          !Number.isInteger(bytes) ||
+          bytes <= 0 ||
           bytes > CLOUDINARY_MAX_BYTES ||
-          !Number.isFinite(duration) || duration <= 0 || duration > 600 ||
+          !Number.isFinite(duration) ||
+          duration <= 0 ||
+          duration > 600 ||
           !["mp4", "mov", "webm"].includes(format) ||
           upload.resource_type !== "video" ||
           upload.type !== "upload"
         ) {
-          return json({ success: false, error: "Invalid video upload details" }, 400);
+          return json({
+            success: false,
+            error: "Invalid video upload details"
+          }, 400);
         }
 
         const expectedSignature = await sha1Hex(
@@ -634,14 +971,20 @@ export default {
         );
 
         if (expectedSignature !== responseSignature.toLowerCase()) {
-          return json({ success: false, error: "Cloudinary response verification failed" }, 403);
+          return json({
+            success: false,
+            error: "Cloudinary response verification failed"
+          }, 403);
         }
 
         const expectedUrlPrefix =
           `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/video/upload/`;
 
         if (!secureUrl.startsWith(expectedUrlPrefix)) {
-          return json({ success: false, error: "Invalid Cloudinary video URL" }, 400);
+          return json({
+            success: false,
+            error: "Invalid Cloudinary video URL"
+          }, 400);
         }
 
         await env.DB.prepare(
@@ -669,15 +1012,23 @@ export default {
         }, 201);
 
       } catch (error) {
+        const authErrors = [
+          "Authentication required",
+          "Invalid token",
+          "Invalid token algorithm",
+          "Invalid token signature",
+          "Invalid or expired Firebase token",
+          "Unknown signing key"
+        ];
+
+        const isAuth = authErrors.includes(error.message);
+
         return json({
           success: false,
-          error: isAuthError(error)
+          error: isAuth
             ? "Please sign in again"
-            : error.message === "Approved partner account required"
-              ? error.message
-              : "Unable to verify and save video"
-        }, isAuthError(error) ? 401 :
-          error.message === "Approved partner account required" ? 403 : 500);
+            : "Unable to verify and save video"
+        }, isAuth ? 401 : 500);
       }
     }
 
