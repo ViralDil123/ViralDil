@@ -560,27 +560,21 @@ export default {
       }
     }
 
-      }
-    // PARTNER: Submit video details (metadata only; no file upload yet)
+      
+    // PARTNER: Verify Cloudinary upload and save video metadata
     if (
       path === "/api/partner/videos" &&
       request.method === "POST"
     ) {
-      if (!env.DB) {
-        return json({ success: false, error: "Database is not configured" }, 500);
-      }
-
       try {
-        const user = await verifyFirebaseToken(request);
+        if (!env.DB) {
+          return json({ success: false, error: "Database is not configured" }, 500);
+        }
 
-        const partner = await env.DB.prepare(
-          `SELECT id FROM partner_applications
-           WHERE auth_uid = ? AND email = ? AND status = 'Approved'
-           LIMIT 1`
-        ).bind(user.uid, user.email).first();
+        const user = await requireApprovedPartner(request, env);
 
-        if (!partner) {
-          return json({ success: false, error: "Approved partner account required" }, 403);
+        if (!env.CLOUDINARY_API_SECRET || !env.CLOUDINARY_CLOUD_NAME) {
+          return json({ success: false, error: "Cloudinary is not configured" }, 500);
         }
 
         const contentType = request.headers.get("content-type") || "";
@@ -588,17 +582,13 @@ export default {
           return json({ success: false, error: "Content-Type must be application/json" }, 415);
         }
 
-        const length = Number(request.headers.get("content-length") || 0);
-        if (length > 16000) {
-          return json({ success: false, error: "Request is too large" }, 413);
-        }
-
         const data = await request.json();
+
         const title = String(data.title || "").trim();
         const description = String(data.description || "").trim();
         const category = String(data.category || "").trim();
-        const duration = Number(data.durationSeconds);
         const rightsConfirmed = data.rightsConfirmed === true;
+        const upload = data.upload || {};
 
         const allowedCategories = [
           "Emotional", "Romance", "Funny",
@@ -609,52 +599,88 @@ export default {
           title.length < 2 || title.length > 150 ||
           description.length > 2000 ||
           !allowedCategories.includes(category) ||
-          !Number.isInteger(duration) || duration < 1 || duration > 600
+          !rightsConfirmed
         ) {
-          return json({ success: false, error: "Please check the video details" }, 400);
+          return json({ success: false, error: "Please check the video details and rights confirmation" }, 400);
         }
 
-        if (!rightsConfirmed) {
-          return json({ success: false, error: "Video rights confirmation is required" }, 400);
+        const videoId = String(data.videoId || "");
+        const publicId = String(upload.public_id || "");
+        const version = Number(upload.version);
+        const responseSignature = String(upload.signature || "");
+        const secureUrl = String(upload.secure_url || "");
+        const bytes = Number(upload.bytes);
+        const duration = Number(upload.duration);
+        const format = String(upload.format || "").toLowerCase();
+
+        if (
+          !/^[0-9a-f-]{36}$/i.test(videoId) ||
+          publicId !== `partners/${user.uid}/${videoId}` ||
+          !Number.isInteger(version) || version <= 0 ||
+          !/^[a-f0-9]{40}$/i.test(responseSignature) ||
+          !Number.isInteger(bytes) || bytes <= 0 ||
+          bytes > CLOUDINARY_MAX_BYTES ||
+          !Number.isFinite(duration) || duration <= 0 || duration > 600 ||
+          !["mp4", "mov", "webm"].includes(format) ||
+          upload.resource_type !== "video" ||
+          upload.type !== "upload"
+        ) {
+          return json({ success: false, error: "Invalid video upload details" }, 400);
         }
 
-        const videoId = crypto.randomUUID();
+        const expectedSignature = await sha1Hex(
+          `public_id=${publicId}&version=${version}` +
+          env.CLOUDINARY_API_SECRET
+        );
+
+        if (expectedSignature !== responseSignature.toLowerCase()) {
+          return json({ success: false, error: "Cloudinary response verification failed" }, 403);
+        }
+
+        const expectedUrlPrefix =
+          `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}/video/upload/`;
+
+        if (!secureUrl.startsWith(expectedUrlPrefix)) {
+          return json({ success: false, error: "Invalid Cloudinary video URL" }, 400);
+        }
 
         await env.DB.prepare(
           `INSERT INTO videos
            (id, partner_uid, title, description, category,
-            duration_seconds, rights_confirmed, status)
-           VALUES (?, ?, ?, ?, ?, ?, 1, 'Pending')`
+            duration_seconds, video_url, storage_key,
+            rights_confirmed, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'Pending')`
         ).bind(
-          videoId, user.uid, title, description, category, duration
+          videoId,
+          user.uid,
+          title,
+          description,
+          category,
+          Math.ceil(duration),
+          secureUrl,
+          publicId
         ).run();
 
         return json({
           success: true,
-          message: "Video details submitted for Admin review",
-          status: "Pending",
-          id: videoId
+          message: "Video uploaded and submitted for Admin review",
+          id: videoId,
+          status: "Pending"
         }, 201);
 
       } catch (error) {
-        const authErrors = [
-          "Authentication required",
-          "Invalid token",
-          "Invalid token algorithm",
-          "Invalid token signature",
-          "Invalid or expired Firebase token",
-          "Unknown signing key"
-        ];
-
-        const isAuthError = authErrors.includes(error.message);
-
         return json({
           success: false,
-          error: isAuthError
+          error: isAuthError(error)
             ? "Please sign in again"
-            : "Unable to submit video details"
-        }, isAuthError ? 401 : 500);
+            : error.message === "Approved partner account required"
+              ? error.message
+              : "Unable to verify and save video"
+        }, isAuthError(error) ? 401 :
+          error.message === "Approved partner account required" ? 403 : 500);
       }
+    }
+
     }
       
     // PARTNER: List own videos
