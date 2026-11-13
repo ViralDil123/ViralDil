@@ -6,38 +6,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Upload Video - ViralDil</title>
   <link rel="stylesheet" href="../assets/css/style.css">
-
   <style>
     * { box-sizing: border-box; }
-
     body {
       margin: 0;
       background: #101018;
       color: #fff;
       font-family: Arial, sans-serif;
     }
-
     .upload-container {
       max-width: 650px;
       margin: 25px auto;
       padding: 16px;
     }
-
     .upload-card {
       background: #191925;
       border: 1px solid #303044;
       border-radius: 14px;
       padding: 20px;
     }
-
     h2 { color: #ff477e; }
-
     label {
       display: block;
       margin-top: 16px;
       font-size: 14px;
     }
-
     input, textarea, select {
       width: 100%;
       padding: 13px;
@@ -47,12 +40,8 @@
       border: 1px solid #414158;
       border-radius: 8px;
     }
-
-    textarea {
-      min-height: 100px;
-      resize: vertical;
-    }
-
+    input[type="file"] { font-size: 13px; }
+    textarea { min-height: 100px; resize: vertical; }
     .rights {
       display: flex;
       align-items: flex-start;
@@ -61,12 +50,10 @@
       margin: 18px 0;
       font-size: 13px;
     }
-
     .rights input {
       width: auto;
       margin-top: 3px;
     }
-
     button {
       width: 100%;
       padding: 14px;
@@ -78,9 +65,7 @@
       font-weight: bold;
       cursor: pointer;
     }
-
     button:disabled { opacity: .5; }
-
     .notice {
       background: #252235;
       padding: 13px;
@@ -90,13 +75,18 @@
       line-height: 1.6;
       margin: 15px 0;
     }
-
     #message {
       margin-top: 15px;
       font-size: 14px;
       line-height: 1.5;
+      overflow-wrap: anywhere;
     }
-
+    progress {
+      width: 100%;
+      height: 12px;
+      margin-top: 12px;
+      accent-color: #ff477e;
+    }
     .back-link {
       display: inline-block;
       margin-top: 18px;
@@ -104,36 +94,26 @@
     }
   </style>
 </head>
-
 <body>
   <main class="upload-container">
     <div class="upload-card">
       <h2>Upload Video</h2>
-      <p>Submit your video details for ViralDil Admin review.</p>
+      <p>Upload your video for ViralDil Admin review.</p>
 
       <div class="notice">
-        <strong>Important:</strong>
-        Actual video file storage is not available yet.
-        This form currently submits video information only.
+        Only upload videos you own or have permission to distribute.
+        Supported formats: MP4, MOV and WebM. Maximum file size: 100 MB.
+        Uploads use your Cloudinary account allowance.
       </div>
 
       <form id="uploadForm">
-
         <label for="title">Video Title</label>
-        <input
-          type="text"
-          id="title"
-          maxlength="150"
-          required
-          placeholder="Enter video title"
-        >
+        <input type="text" id="title" maxlength="150"
+          required placeholder="Enter video title">
 
         <label for="description">Video Description</label>
-        <textarea
-          id="description"
-          maxlength="2000"
-          placeholder="Describe your video"
-        ></textarea>
+        <textarea id="description" maxlength="2000"
+          placeholder="Describe your video"></textarea>
 
         <label for="category">Video Category</label>
         <select id="category" required>
@@ -146,15 +126,12 @@
           <option value="Entertainment">Entertainment</option>
         </select>
 
-        <label for="duration">Video Duration (Seconds)</label>
+        <label for="videoFile">Choose Video</label>
         <input
-          type="number"
-          id="duration"
-          min="1"
-          max="600"
-          step="1"
+          type="file"
+          id="videoFile"
+          accept="video/mp4,video/quicktime,video/webm"
           required
-          placeholder="Maximum 600 seconds"
         >
 
         <label class="rights">
@@ -166,9 +143,10 @@
         </label>
 
         <button type="submit" id="submitBtn">
-          Submit for Admin Review
+          Upload and Submit for Review
         </button>
 
+        <progress id="uploadProgress" value="0" max="100" hidden></progress>
         <div id="message" role="status"></div>
       </form>
 
@@ -183,8 +161,8 @@
 
   <script>
     const firebaseConfig = {
-  apiKey: "AIzaSyCX7XIJTMLMBqZjwh5stVxDOmc1Xo-d2g0",
-  authDomain: "viraldil.firebaseapp.com",
+      apiKey: "AIzaSyCX7XIJTMLMBqZjwh5stVxDOmc1Xo-d2g0",
+      authDomain: "viraldil.firebaseapp.com",
       projectId: "viraldil",
       storageBucket: "viraldil.firebasestorage.app",
       messagingSenderId: "545020674224",
@@ -200,16 +178,87 @@
     const form = document.getElementById("uploadForm");
     const submitBtn = document.getElementById("submitBtn");
     const message = document.getElementById("message");
+    const progress = document.getElementById("uploadProgress");
+    const fileInput = document.getElementById("videoFile");
 
     let currentUser = null;
 
     auth.onAuthStateChanged(user => {
       currentUser = user;
-
-      if (!user) {
-        window.location.href = "login.html";
-      }
+      if (!user) window.location.href = "login.html";
     });
+
+    async function apiPost(path, token, body) {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + token
+        },
+        body: JSON.stringify(body)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Request failed");
+      }
+
+      return data;
+    }
+
+    function uploadToCloudinary(file, signedData) {
+      return new Promise((resolve, reject) => {
+        const formData = new FormData();
+
+        formData.append("file", file);
+        formData.append("api_key", signedData.apiKey);
+        formData.append("timestamp", String(signedData.timestamp));
+        formData.append("signature", signedData.signature);
+        formData.append("upload_preset", signedData.uploadPreset);
+        formData.append("public_id", signedData.publicId);
+
+        const xhr = new XMLHttpRequest();
+
+        xhr.open(
+          "POST",
+          `https://api.cloudinary.com/v1_1/${signedData.cloudName}/video/upload`
+        );
+
+        xhr.upload.onprogress = event => {
+          if (event.lengthComputable) {
+            progress.value = Math.round(
+              (event.loaded / event.total) * 100
+            );
+          }
+        };
+
+        xhr.onload = () => {
+          let result;
+
+          try {
+            result = JSON.parse(xhr.responseText);
+          } catch {
+            reject(new Error("Invalid Cloudinary response"));
+            return;
+          }
+
+          if (xhr.status < 200 || xhr.status >= 300) {
+            reject(new Error(
+              result.error?.message || "Cloudinary upload failed"
+            ));
+            return;
+          }
+
+          resolve(result);
+        };
+
+        xhr.onerror = () => reject(new Error("Network upload failed"));
+        xhr.onabort = () => reject(new Error("Upload cancelled"));
+
+        xhr.send(formData);
+      });
+    }
 
     form.addEventListener("submit", async event => {
       event.preventDefault();
@@ -222,19 +271,31 @@
       const title = document.getElementById("title").value.trim();
       const description = document.getElementById("description").value.trim();
       const category = document.getElementById("category").value;
-      const durationSeconds = Number(
-        document.getElementById("duration").value
-      );
-      const rightsConfirmed =
-        document.getElementById("rights").checked;
+      const rightsConfirmed = document.getElementById("rights").checked;
+      const file = fileInput.files[0];
+
+      if (!file) {
+        message.textContent = "Please select a video.";
+        return;
+      }
+
+      const allowedExtensions = /\.(mp4|mov|webm)$/i;
+
+      if (
+        !allowedExtensions.test(file.name) ||
+        file.size <= 0 ||
+        file.size > 100 * 1024 * 1024
+      ) {
+        message.textContent =
+          "Choose an MP4, MOV or WebM video up to 100 MB.";
+        return;
+      }
 
       if (
         title.length < 2 ||
         title.length > 150 ||
         description.length > 2000 ||
-        !Number.isInteger(durationSeconds) ||
-        durationSeconds < 1 ||
-        durationSeconds > 600 ||
+        !category ||
         !rightsConfirmed
       ) {
         message.textContent = "Please check all video details.";
@@ -242,45 +303,67 @@
       }
 
       submitBtn.disabled = true;
-      submitBtn.textContent = "Submitting...";
+      submitBtn.textContent = "Preparing secure upload...";
       message.textContent = "";
+      progress.hidden = false;
+      progress.value = 0;
 
       try {
         const token = await currentUser.getIdToken();
 
-        const response = await fetch("/api/partner/videos", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + token
-          },
-          body: JSON.stringify({
+        // Step 1: Ask Worker for signed upload parameters.
+        const signedData = await apiPost(
+          "/api/partner/videos/signature",
+          token,
+          {}
+        );
+
+        // Step 2: Upload video directly to Cloudinary.
+        submitBtn.textContent = "Uploading video...";
+        const cloudinaryResult = await uploadToCloudinary(
+          file,
+          signedData
+        );
+
+        // Step 3: Ask Worker to verify and save the upload.
+        submitBtn.textContent = "Saving video details...";
+
+        const saved = await apiPost(
+          "/api/partner/videos",
+          token,
+          {
+            videoId: signedData.videoId,
             title,
             description,
             category,
-            durationSeconds,
-            rightsConfirmed
-          })
-        });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || "Video submission failed.");
-        }
+            rightsConfirmed,
+            upload: {
+              public_id: cloudinaryResult.public_id,
+              version: cloudinaryResult.version,
+              signature: cloudinaryResult.signature,
+              secure_url: cloudinaryResult.secure_url,
+              bytes: cloudinaryResult.bytes,
+              duration: cloudinaryResult.duration,
+              format: cloudinaryResult.format,
+              resource_type: cloudinaryResult.resource_type,
+              type: cloudinaryResult.type
+            }
+          }
+        );
 
         message.textContent =
-          "Video details submitted successfully. Status: " +
-          data.status;
+          "Video uploaded successfully. Admin review status: " +
+          saved.status;
 
         form.reset();
+        progress.value = 100;
 
       } catch (error) {
-        message.textContent = error.message ||
-          "Unable to submit video details.";
+        message.textContent =
+          error.message || "Video upload failed.";
       } finally {
         submitBtn.disabled = false;
-        submitBtn.textContent = "Submit for Admin Review";
+        submitBtn.textContent = "Upload and Submit for Review";
       }
     });
   </script>
