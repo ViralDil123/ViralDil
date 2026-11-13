@@ -1,5 +1,53 @@
 
 let firebaseKeysCache = null;
+
+const CLOUDINARY_PRESET = "viraldil_video_signed";
+const CLOUDINARY_MAX_BYTES = 100 * 1024 * 1024; // 100 MB
+
+async function sha1Hex(value) {
+  const bytes = new TextEncoder().encode(value);
+  const hash = await crypto.subtle.digest("SHA-1", bytes);
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function cloudinarySign(params, secret) {
+  const serialized = Object.keys(params)
+    .sort()
+    .map(key => `${key}=${params[key]}`)
+    .join("&");
+
+  return sha1Hex(serialized + secret);
+}
+
+async function requireApprovedPartner(request, env) {
+  const user = await verifyFirebaseToken(request);
+
+  const partner = await env.DB.prepare(
+    `SELECT id FROM partner_applications
+     WHERE auth_uid = ? AND email = ? AND status = 'Approved'
+     LIMIT 1`
+  ).bind(user.uid, user.email).first();
+
+  if (!partner) {
+    throw new Error("Approved partner account required");
+  }
+
+  return user;
+}
+
+function isAuthError(error) {
+  return [
+    "Authentication required",
+    "Invalid token",
+    "Invalid token algorithm",
+    "Invalid token signature",
+    "Invalid or expired Firebase token",
+    "Unknown signing key"
+  ].includes(error.message);
+}
+
 let firebaseKeysExpiry = 0;
 
 function json(data, status = 200) {
@@ -451,6 +499,67 @@ export default {
           error: "Unable to submit application"
         }, 500);
       }
+      
+    // PARTNER: Generate secure Cloudinary upload signature
+    if (
+      path === "/api/partner/videos/signature" &&
+      request.method === "POST"
+    ) {
+      try {
+        if (!env.DB) {
+          return json({ success: false, error: "Database is not configured" }, 500);
+        }
+
+        const user = await requireApprovedPartner(request, env);
+
+        if (
+          !env.CLOUDINARY_API_SECRET ||
+          !env.CLOUDINARY_API_KEY ||
+          !env.CLOUDINARY_CLOUD_NAME
+        ) {
+          return json({ success: false, error: "Cloudinary is not configured" }, 500);
+        }
+
+        const videoId = crypto.randomUUID();
+        const timestamp = Math.floor(Date.now() / 1000);
+
+        const publicId = `partners/${user.uid}/${videoId}`;
+
+        const params = {
+          timestamp: String(timestamp),
+          upload_preset: CLOUDINARY_PRESET,
+          public_id: publicId
+        };
+
+        const signature = await cloudinarySign(
+          params,
+          env.CLOUDINARY_API_SECRET
+        );
+
+        return json({
+          success: true,
+          videoId,
+          cloudName: env.CLOUDINARY_CLOUD_NAME,
+          apiKey: env.CLOUDINARY_API_KEY,
+          timestamp,
+          uploadPreset: CLOUDINARY_PRESET,
+          publicId,
+          signature
+        });
+
+      } catch (error) {
+        return json({
+          success: false,
+          error: isAuthError(error)
+            ? "Please sign in again"
+            : error.message === "Approved partner account required"
+              ? error.message
+              : "Unable to prepare secure upload"
+        }, isAuthError(error) ? 401 :
+          error.message === "Approved partner account required" ? 403 : 500);
+      }
+    }
+
       }
     // PARTNER: Submit video details (metadata only; no file upload yet)
     if (
