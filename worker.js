@@ -548,75 +548,7 @@ export default {
         });
 
       } catch (error) {
-        return json({
-          success: false,
-          error: isAuthError(error)
-            ? "Please sign in again"
-            : error.message === "Approved partner account required"
-              ? error.message
-              : "Unable to prepare secure upload"
-        }, isAuthError(error) ? 401 :
-          error.message === "Approved partner account required" ? 403 : 500);
-      }
-    }
 
-      
-    // PARTNER: Verify Cloudinary upload and save video metadata
-    if (
-      path === "/api/partner/videos" &&
-      request.method === "POST"
-    ) {
-      try {
-        if (!env.DB) {
-          return json({ success: false, error: "Database is not configured" }, 500);
-        }
-
-        const user = await requireApprovedPartner(request, env);
-
-        if (!env.CLOUDINARY_API_SECRET || !env.CLOUDINARY_CLOUD_NAME) {
-          return json({ success: false, error: "Cloudinary is not configured" }, 500);
-        }
-
-        const contentType = request.headers.get("content-type") || "";
-        if (!contentType.includes("application/json")) {
-          return json({ success: false, error: "Content-Type must be application/json" }, 415);
-        }
-
-        const data = await request.json();
-
-        const title = String(data.title || "").trim();
-        const description = String(data.description || "").trim();
-        const category = String(data.category || "").trim();
-        const rightsConfirmed = data.rightsConfirmed === true;
-        const upload = data.upload || {};
-
-        const allowedCategories = [
-          "Emotional", "Romance", "Funny",
-          "AI Stories", "Trending", "Entertainment"
-        ];
-
-        if (
-          title.length < 2 || title.length > 150 ||
-          description.length > 2000 ||
-          !allowedCategories.includes(category) ||
-          !rightsConfirmed
-        ) {
-          return json({ success: false, error: "Please check the video details and rights confirmation" }, 400);
-        }
-
-        const videoId = String(data.videoId || "");
-        const publicId = String(upload.public_id || "");
-        const version = Number(upload.version);
-        const responseSignature = String(upload.signature || "");
-        const secureUrl = String(upload.secure_url || "");
-        const bytes = Number(upload.bytes);
-        const duration = Number(upload.duration);
-        const format = String(upload.format || "").toLowerCase();
-
-        if (
-          !/^[0-9a-f-]{36}$/i.test(videoId) ||
-          publicId !== `partners/${user.uid}/${videoId}` ||
-          !Number.isInteger(version) || version <= 0 ||
     // PARTNER: Submit application
     if (
       path === "/api/partner/applications" &&
