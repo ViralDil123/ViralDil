@@ -356,62 +356,6 @@ export default {
 
         const length = Number(request.headers.get("content-length") || 0);
         if (length > 16000) {
-          return json({
-            success: false,
-            error: "Request is too large"
-          }, 413);
-        }
-
-        let user;
-
-        try {
-          user = await verifyFirebaseToken(request);
-        } catch (error) {
-          return json({
-            success: false,
-            error: "Please sign in with your Firebase account again"
-          }, 401);
-        }
-
-        const data = await request.json();
-
-        const fullName = String(data.fullName || "").trim();
-        const email = String(data.email || "").trim().toLowerCase();
-        const country = String(data.country || "").trim();
-        const socialProfile = String(data.socialProfile || "").trim();
-        const contentCategory = String(data.contentCategory || "").trim();
-        const rightsConfirmed = data.rightsConfirmed === true;
-
-        if (email !== user.email) {
-          return json({
-            success: false,
-            error: "Application email must match your signed-in account"
-          }, 403);
-        }
-
-        if (
-          fullName.length < 2 ||
-
-    // PARTNER: Submit application
-    if (
-      path === "/api/partner/applications" &&
-      request.method === "POST"
-    ) {
-      try {
-        if (!env.DB) {
-          return json({ success: false, error: "Database is not configured" }, 500);
-        }
-
-        const contentType = request.headers.get("content-type") || "";
-        if (!contentType.includes("application/json")) {
-          return json({
-            success: false,
-            error: "Content-Type must be application/json"
-          }, 415);
-        }
-
-        const length = Number(request.headers.get("content-length") || 0);
-        if (length > 16000) {
           return json({ success: false, error: "Request is too large" }, 413);
         }
 
