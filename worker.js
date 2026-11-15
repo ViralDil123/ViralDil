@@ -520,35 +520,6 @@ export default {
           return json({ success: false, error: "Cloudinary is not configured" }, 500);
         }
 
-        const videoId = crypto.randomUUID();
-        const timestamp = Math.floor(Date.now() / 1000);
-
-        const publicId = `partners/${user.uid}/${videoId}`;
-
-        const params = {
-          timestamp: String(timestamp),
-          upload_preset: CLOUDINARY_PRESET,
-          public_id: publicId
-        };
-
-        const signature = await cloudinarySign(
-          params,
-          env.CLOUDINARY_API_SECRET
-        );
-
-        return json({
-          success: true,
-          videoId,
-          cloudName: env.CLOUDINARY_CLOUD_NAME,
-          apiKey: env.CLOUDINARY_API_KEY,
-          timestamp,
-          uploadPreset: CLOUDINARY_PRESET,
-          publicId,
-          signature
-        });
-
-      } catch (error) {
-
     // PARTNER: Submit application
     if (
       path === "/api/partner/applications" &&
