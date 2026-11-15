@@ -750,8 +750,6 @@ export default {
         }, isAuth ? 401 : 500);
       }
     }
-
-    }
       
     // PARTNER: List own videos
     if (
