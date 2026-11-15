@@ -471,53 +471,6 @@ export default {
             content_category, rights_confirmed)
            VALUES (?, ?, ?, ?, ?, ?, 1)`
         ).bind(
-          user.uid,
-          fullName,
-          email,
-          country,
-          socialProfile,
-          contentCategory
-        ).run();
-
-        const application = await env.DB.prepare(
-          `SELECT id, status
-           FROM partner_applications
-           WHERE auth_uid = ?
-           LIMIT 1`
-        ).bind(user.uid).first();
-
-        return json({
-          success: true,
-          message: "Application submitted successfully",
-          status: application?.status || "Pending",
-          id: application?.id || null
-        }, 201);
-
-      } catch (error) {
-        return json({
-          success: false,
-          error: "Unable to submit application"
-        }, 500);
-      }
-      
-    // PARTNER: Generate secure Cloudinary upload signature
-    if (
-      path === "/api/partner/videos/signature" &&
-      request.method === "POST"
-    ) {
-      try {
-        if (!env.DB) {
-          return json({ success: false, error: "Database is not configured" }, 500);
-        }
-
-        const user = await requireApprovedPartner(request, env);
-
-        if (
-          !env.CLOUDINARY_API_SECRET ||
-          !env.CLOUDINARY_API_KEY ||
-          !env.CLOUDINARY_CLOUD_NAME
-        ) {
-          return json({ success: false, error: "Cloudinary is not configured" }, 500);
         }
 
     // PARTNER: Submit application
